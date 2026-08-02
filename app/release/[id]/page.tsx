@@ -205,7 +205,11 @@ export default function ReleasePage() {
 
   if (!release) return null
 
-  const isCurrentPlaying = activeTrack && tracks.some(t => t.id === activeTrack.id) && isPlaying
+  const isCurrentPlaying = activeTrack && isPlaying && tracks.some(t =>
+    t.id === activeTrack.id ||
+    t.title === activeTrack.title ||
+    (t.release_id && activeTrack.id === t.release_id)
+  );
 
   const renderArtistLinks = (collaboratorsStr?: string, className: string = '') => {
     const artists = ['NORDOSIK']
@@ -289,8 +293,8 @@ export default function ReleasePage() {
               <button
                 onClick={togglePlayer}
                 className={`p-3 rounded-full border transition-all ${playerHidden
-                    ? 'bg-white text-black border-white'
-                    : 'bg-transparent text-zinc-500 border-white/10 hover:text-white'
+                  ? 'bg-white text-black border-white'
+                  : 'bg-transparent text-zinc-500 border-white/10 hover:text-white'
                   }`}
                 title={isMounted ? (playerHidden ? $t.showPlayer : $t.hidePlayer) : (playerHidden ? 'Show Player' : 'Hide Player')}
               >
@@ -322,8 +326,17 @@ export default function ReleasePage() {
           <div className="flex-1 overflow-y-auto px-3 pr-2 custom-scrollbar overscroll-contain">
             <div className="flex flex-col">
               {tracks.map((track, i) => {
-                const isCurrent = activeTrack?.id === track.id
-                const isCurrentTrackPlaying = isCurrent && isPlaying
+                const isCurrent = !!(
+                  activeTrack && (
+                    // 1. Прямое совпадение по ID трека
+                    activeTrack.id === track.id ||
+                    // 2. Если у трека есть release_id, а activeTrack.id — это ID релиза
+                    (track.release_id && activeTrack.id === track.release_id) ||
+                    // 3. Совпадение по названию трека
+                    activeTrack.title === track.title
+                  )
+                );
+                const isCurrentTrackPlaying = isCurrent && isPlaying;
                 const isEcosystemTrack = track.is_ecosystem
                 const isHotNew = track.is_hot
 
@@ -335,16 +348,16 @@ export default function ReleasePage() {
                       setIsPlaying(true)
                     }}
                     className={`group flex items-center justify-between p-4 rounded-lg my-2 mx-0.5 cursor-pointer transition-all duration-300 relative border ${isCurrentTrackPlaying
-                        ? isEcosystemTrack
-                          ? 'bg-emerald-950/20 border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.35),inset_0_0_12px_rgba(52,211,153,0.15)] scale-[1.01]'
-                          : isHotNew
-                            ? 'bg-red-950/20 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.35),inset_0_0_12px_rgba(239,68,68,0.15)] scale-[1.01]'
-                            : 'bg-white/5 border-white/20 shadow-[0_0_20px_rgba(255,255,255,0.05)] scale-[1.01]'
-                        : isEcosystemTrack
-                          ? 'bg-zinc-900/10 border-emerald-500/10 hover:border-emerald-500/30'
-                          : isHotNew
-                            ? 'bg-zinc-900/10 border-red-500/10 hover:border-red-500/30'
-                            : 'bg-transparent border-transparent hover:bg-white/[0.02]'
+                      ? isEcosystemTrack
+                        ? 'bg-emerald-950/20 border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.35),inset_0_0_12px_rgba(52,211,153,0.15)] scale-[1.01]'
+                        : isHotNew
+                          ? 'bg-red-950/20 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.35),inset_0_0_12px_rgba(239,68,68,0.15)] scale-[1.01]'
+                          : 'bg-white/5 border-white/20 shadow-[0_0_20px_rgba(255,255,255,0.05)] scale-[1.01]'
+                      : isEcosystemTrack
+                        ? 'bg-zinc-900/10 border-emerald-500/10 hover:border-emerald-500/30'
+                        : isHotNew
+                          ? 'bg-zinc-900/10 border-red-500/10 hover:border-red-500/30'
+                          : 'bg-transparent border-transparent hover:bg-white/[0.02]'
                       }`}
                   >
                     <div className="flex items-center gap-6 min-w-0 flex-1 pr-4">
