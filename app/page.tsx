@@ -102,10 +102,11 @@ function HomeContent() {
           .filter(Boolean)
           .map((t: any) => ({
             ...t,
+            release_id: release.id, // <-- ОБЯЗАТЕЛЬНО: привязываем ID релиза к треку
             cover_url: release.cover_url,
             audio_url: t.audio_url,
             collaborators: t.collaborators || '',
-            lyrics: t.lyrics || '' // <-- Добавили явный фоллбэк на lyrics
+            lyrics: t.lyrics || ''
           }));
 
         const trackCollabs = sortedTracks.length > 0 ? (sortedTracks[0].collaborators || '') : '';
@@ -140,6 +141,7 @@ function HomeContent() {
       setTracks([{
         ...release,
         id: release.id,
+        release_id: release.id, // <-- ОБЯЗАТЕЛЬНО
         title: release.title,
         audio_url: release.audio_url,
         cover_url: release.cover_url,
