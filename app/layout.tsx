@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Player from './components/Player'
 import LyricsOverlay from './components/LyricsOverlay'
+import TopPanel from './components/TopPanel' 
+import ArtistModal from './components/ArtistModal' // МОЙ НОВЫЙ ИМПОРТ ДЛЯ МОДАЛКИ СВЯЗЕЙ
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,13 +28,16 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="ru" // Меняем дефолтный язык на "ru", так как Nordosik пишет треки на русском и это основная аудитория
-      suppressHydrationWarning // Железная защита Next.js от ворнингов гидратации при переключении языков в localStorage
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased bg-[#050505]`} // Добавили дефолтный цвет фона, чтобы при загрузке не было белой вспышки
+      lang="ru"
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased bg-[#050505]`}
     >
-      <body className="min-h-full flex flex-col">{children}
+      <body className="min-h-full flex flex-col">
+        {children}
+        <TopPanel /> 
         <LyricsOverlay />
         <Player />
+        <ArtistModal /> {/* МОЯ ГЛОБАЛЬНАЯ МОДАЛКА ДЛЯ СОЦСЕТЕЙ ПАЦАНОВ */}
       </body>
     </html>
   );

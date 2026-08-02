@@ -1,40 +1,39 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
-import { X, Plus, Music, Image as ImageIcon, Check } from 'lucide-react'
+import { X, Plus, Image as ImageIcon, Check } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { usePlayer } from '../lib/usePlayer'
 import { locales } from '../lib/locales'
 
-// Описываем интерфейс трека с локальной длительностью для валидатора
 interface UploadTrack {
   id: string
   title: string
   file: File | null
-  duration: number | null // Важно для мгновенного пересчета типа релиза
+  duration: number | null
+  collaborators: string
 }
 
 export default function UploadModal() {
   const [isOpen, setIsOpen] = useState(false)
   const [title, setTitle] = useState('')
+  const [releaseCollaborators, setReleaseCollaborators] = useState('')
   const [lyrics, setLyrics] = useState('')
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const language = usePlayer(state => state.language);
-  const t = locales[language as 'ru' | 'en' || 'en'];
+  const language = usePlayer(state => state.language)
+  const $t = locales[language as 'ru' | 'en'] || locales.en
+  const [isMounted, setIsMounted] = useState(false)
 
-  const [isMounted, setIsMounted] = useState(false);
   useEffect(() => {
-    setIsMounted(true);
-  }, []);
+    setIsMounted(true)
+  }, [])
 
-  // Храним все треки в единой очереди (начинаем с одного пустого)
   const [tracks, setTracks] = useState<UploadTrack[]>([
-    { id: '1', title: '', file: null, duration: null }
+    { id: '1', title: '', file: null, duration: null, collaborators: '' }
   ])
 
-  // Вспомогательная функция замера длины аудио (в секундах)
   const getDuration = (file: File): Promise<number> => {
     return new Promise((resolve) => {
       const audio = new Audio()
@@ -46,10 +45,6 @@ export default function UploadModal() {
     })
   }
 
-  /**
-   * 📐 Автоматический валидатор типа релиза по правилам площадок
-   */
-  // Оборачиваем в useMemo: расчет сработает ТОЛЬКО если изменилось количество треков или файлы внутри них
   const releaseType = useMemo(() => {
     const validTracks = tracks.filter(t => t.file !== null)
     const trackCount = validTracks.length
@@ -61,20 +56,38 @@ export default function UploadModal() {
     if (trackCount > 0 && totalDurationMin > 30) return 'album'
     if (trackCount >= 4 && trackCount <= 6 && totalDurationMin <= 30) return 'ep'
     if (trackCount >= 1 && trackCount <= 3 && hasLongTrack && totalDurationMin <= 30) return 'ep'
-
     return 'single'
-  }, [tracks]);
+  }, [tracks])
+
+  const ensureArtistsExist = async (artistNamesStr: string) => {
+    if (!artistNamesStr) return
+    const names = artistNamesStr.split(',').map(n => n.trim()).filter(n => n.length > 0)
+    for (const name of names) {
+      if (name.toUpperCase() === 'NORDOSIK') continue
+      const { data } = await supabase.from('artists').select('id').ilike('name', name).maybeSingle()
+      if (!data) {
+        await supabase.from('artists').insert([{ name }])
+      }
+    }
+  }
 
   const handleUpload = async () => {
-    // Валидация: название релиза и хотя бы один заполненный трек
-    const filledTracks = tracks.filter(t => t.title && t.file)
-    if (!title || filledTracks.length === 0) {
-      return alert(t.requiredFieldsAlert)
+    // 1. Проверяем, что заполнено название релиза
+    if (!title.trim()) {
+      return alert($t.errSpecifyTitle)
     }
 
+    // 2. Проверяем, что у всех добавленных треков есть файлы и названия
+    const invalidTrack = tracks.find(t => !t.title.trim() || !t.file)
+    if (invalidTrack) {
+      return alert($t.errFillAllTracks)
+    }
+
+    const filledTracks = tracks
     setLoading(true)
+
     try {
-      // 1. Загрузка обложки релиза
+      // 3. Загрузка обложки
       let coverUrl = null
       if (coverFile) {
         const coverPath = `covers/${Date.now()}_${coverFile.name.replace(/[^a-z0-9.]/gi, '_')}`
@@ -82,67 +95,104 @@ export default function UploadModal() {
         coverUrl = supabase.storage.from('media').getPublicUrl(coverPath).data.publicUrl
       }
 
-      // 2. Последовательный аплоад всех валидных треков в Storage
-      let albumTracksData = []
+      // 4. Проверка и добавление артистов
+      await ensureArtistsExist(releaseCollaborators)
+      for (const tr of filledTracks) {
+        await ensureArtistsExist(tr.collaborators)
+      }
+
+      // 5. Загрузка аудиофайлов во временный массив
+      let uploadedTracksInfo = []
       for (const [index, t] of filledTracks.entries()) {
         if (!t.file) continue
-
-        // Длительность у нас уже посчитана в стейте, берем ее или перепроверяем
         const duration = t.duration || await getDuration(t.file)
         const tPath = `tracks/${Date.now()}_${t.file.name.replace(/[^a-z0-9.]/gi, '_')}`
-
         await supabase.storage.from('media').upload(tPath, t.file)
         const { data: { publicUrl: tUrl } } = supabase.storage.from('media').getPublicUrl(tPath)
 
-        albumTracksData.push({
+        uploadedTracksInfo.push({
           title: t.title,
           audio_url: tUrl,
-          position: index,
-          duration: duration
+          position: index + 1,
+          duration: duration,
+          collaborators: t.collaborators || null
         })
       }
 
-      // Считаем финальные метаданные для записи релиза
-      const totalDurationSec = albumTracksData.reduce((sum, t) => sum + t.duration, 0)
+      const totalDurationSec = uploadedTracksInfo.reduce((sum, t) => sum + t.duration, 0)
+      const finalAudioUrl = uploadedTracksInfo.length === 1 ? uploadedTracksInfo[0].audio_url : null
 
-      // Для совместимости: если трек один, кладем его прямую ссылку в релиз
-      const finalAudioUrl = albumTracksData.length === 1 ? albumTracksData[0].audio_url : null
-
-      // 3. Запись в таблицу 'releases'
+      // 6. Создаём запись в таблице releases (получаем ее ID!)
       const { data: newRelease, error: relError } = await supabase
         .from('releases')
         .insert([{
           title,
+          collaborators: releaseCollaborators || null,
           audio_url: finalAudioUrl,
-          duration: totalDurationSec, // сохраняем общую длину релиза
+          duration: totalDurationSec,
           cover_url: coverUrl,
           lyrics: lyrics,
-          release_type: releaseType // Вместо is_album пишем 'single' | 'ep' | 'album'
-        }]).select().single()
+          release_type: releaseType
+        }])
+        .select('id')
+        .single()
 
-      if (relError) throw relError
+      if (relError || !newRelease) throw relError || new Error('Не удалось создать релиз')
 
-      // 4. Запись дочерних треков в таблицу 'tracks'
-      if (albumTracksData.length > 0) {
-        // Рекомендуется связывать по ID релиза (newRelease.id), но сохраняем твою логику связи по title
-        const tracksWithId = albumTracksData.map(track => ({
-          ...track,
-          release_id: title
-        }))
-        const { error: tracksError } = await supabase.from('tracks').insert(tracksWithId)
-        if (tracksError) throw tracksError
+      const newReleaseId = newRelease.id
+
+      // 7. Поочередно связываем треки с релизом
+      for (let index = 0; index < uploadedTracksInfo.length; index++) {
+        const trackItem = uploadedTracksInfo[index];
+
+        // А) Проверяем, есть ли уже трек с таким названием в базе tracks
+        const { data: existingTrack } = await supabase
+          .from('tracks')
+          .select('id')
+          .ilike('title', trackItem.title.trim())
+          .maybeSingle();
+
+        let targetTrackId = existingTrack?.id;
+
+        // Б) Если трека еще нет в базе — создаем новый
+        if (!targetTrackId) {
+          const { data: insertedTrack, error: trackErr } = await supabase
+            .from('tracks')
+            .insert([{
+              title: trackItem.title.trim(),
+              audio_url: trackItem.audio_url,
+              duration: trackItem.duration,
+              collaborators: trackItem.collaborators,
+              position: trackItem.position
+            }])
+            .select('id')
+            .single();
+
+          if (trackErr || !insertedTrack) throw trackErr || new Error(`Ошибка сохранения трека "${trackItem.title}"`);
+          targetTrackId = insertedTrack.id;
+        }
+
+        // В) Привязываем найденный (или созданный) track_id к новому релизу
+        const { error: relTrackErr } = await supabase
+          .from('release_tracks')
+          .insert([{
+            release_id: newReleaseId,
+            track_id: targetTrackId,
+            track_number: index + 1
+          }]);
+
+        if (relTrackErr) throw relTrackErr;
       }
 
       setIsOpen(false)
       window.location.reload()
     } catch (e: any) {
-      alert(`${t.uploadErrorAlert} ${e.message}`)
+      alert(`${$t.uploadErrorAlert || 'Error:'} ${e.message}`)
     } finally {
       setLoading(false)
     }
   }
 
-  // Блокировка скролла при открытии модалки
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden'
@@ -157,17 +207,6 @@ export default function UploadModal() {
     setTracks(tracks.filter(track => track.id !== id))
   }
 
-  const moveTrack = (dragIndex: number, hoverIndex: number) => {
-    const draggedItem = tracks[dragIndex]
-    const remainingItems = tracks.filter((_, index) => index !== dragIndex)
-    const reorderedItems = [
-      ...remainingItems.slice(0, hoverIndex),
-      draggedItem,
-      ...remainingItems.slice(hoverIndex),
-    ]
-    setTracks(reorderedItems)
-  }
-
   return (
     <>
       <button
@@ -175,149 +214,175 @@ export default function UploadModal() {
         className="flex items-center gap-2 bg-white hover:bg-zinc-200 text-black px-5 py-2.5 rounded-full font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
       >
         <Plus size={14} strokeWidth={3} />
-        {isMounted ? t.addRelease : "+ Add Release"}
+        {isMounted ? $t.addRelease : (language === 'en' ? "ADD RELEASE" : "ДОБАВИТЬ РЕЛИЗ")}
       </button>
 
       <AnimatePresence>
         {isOpen && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-3">
             <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               onClick={() => setIsOpen(false)}
               className="absolute inset-0 bg-black/90 backdrop-blur-md"
             />
-
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-[420px] max-h-[90vh] bg-[#0c0c0c] border border-white/10 p-8 rounded-2xl shadow-2xl flex flex-col justify-between overflow-hidden"
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-[420px] max-h-[92vh] bg-[#0c0c0c] border border-white/10 p-5 rounded-2xl shadow-2xl flex flex-col justify-between overflow-hidden z-10"
             >
-              <button onClick={() => setIsOpen(false)} className="absolute top-5 right-5 text-zinc-600 hover:text-white transition">
-                <X size={20} />
-              </button>
+              {/* Крестик */}
+              <motion.button
+                onClick={() => setIsOpen(false)}
+                whileHover={{ scale: 1.2, rotate: 90, color: "#ef4444" }}
+                whileTap={{ scale: 0.85 }}
+                className="absolute top-5 right-5 text-zinc-500 transition-colors text-xl font-mono select-none"
+              >
+                <X />
+              </motion.button>
 
-              <h2 className="text-2xl font-black tracking-tighter uppercase text-white">{t.newReleaseTitle}</h2>
+              <h2 className="text-xl font-black tracking-tighter uppercase text-white mb-3">
+                {$t.newReleaseTitle || "NEW RELEASE"}
+              </h2>
 
-              {/* Автоматический интерактивный индикатор формата релиза */}
-              <div className="flex bg-black p-3 rounded-xl border border-white/5 items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{t.detectedType}</span>
-                <span className="px-3 py-1 bg-white text-black rounded-md text-[10px] font-black uppercase tracking-widest animate-pulse">
-                  {releaseType === 'album' && t.album}
-                  {releaseType === 'ep' && t.ep}
-                  {releaseType === 'single' && t.single}
-                </span>
-              </div>
+              <div className="space-y-3.5 overflow-y-auto pr-1 custom-scrollbar max-h-[calc(92vh-110px)]">
+                {/* Формат релиза */}
+                <div className="flex bg-black p-2.5 rounded-xl border border-white/5 items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-400">
+                    {$t.detectedType || "DETECTED TYPE:"}
+                  </span>
+                  <span className="px-3 py-1 bg-white text-black rounded-md text-[11px] font-black uppercase tracking-widest animate-pulse">
+                    {releaseType === 'album' && ($t.album || "ALBUM")}
+                    {releaseType === 'ep' && ($t.ep || "EP")}
+                    {releaseType === 'single' && ($t.single || "SINGLE")}
+                  </span>
+                </div>
 
-              <div className="space-y-5">
-                {/* Title */}
+                {/* Название релиза */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-600 ml-1">{t.releaseTitleLabel}</label>
+                  <label className="text-[11px] font-black uppercase tracking-wider text-zinc-400 ml-1">
+                    {$t.releaseTitleLabel}
+                  </label>
                   <input
                     type="text"
-                    placeholder={t.enterTitlePlaceholder}
-                    className="w-full bg-black border border-white/5 p-3 rounded-xl focus:border-white/20 outline-none transition text-sm font-bold uppercase tracking-tighter text-white"
+                    placeholder={$t.enterTitlePlaceholder}
+                    className="w-full bg-black border border-white/5 p-2.5 rounded-xl focus:border-white/20 outline-none transition text-xs font-bold tracking-tight text-white placeholder:text-zinc-600"
+                    value={title}
                     onChange={e => setTitle(e.target.value)}
                   />
                 </div>
 
-                {/* Треклист (Универсальный список) */}
-                <div className="max-h-[180px] overflow-y-auto pr-1 custom-scrollbar flex flex-col gap-y-2 snap-y">
-                  {tracks.map((track, index) => (
-                    <div
-                      key={track.id}
-                      draggable
-                      onDragStart={(e) => e.dataTransfer.setData('index', index.toString())}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        const dragIndex = parseInt(e.dataTransfer.getData('index'))
-                        moveTrack(dragIndex, index)
-                      }}
-                      className="flex gap-2 items-center bg-black/40 p-2 rounded-xl border border-white/5 group"
-                    >
-                      <div className="text-zinc-700 group-hover:text-zinc-500 transition-colors cursor-grab">
-                        <svg width="12" height="12" viewBox="0 0 15 15" fill="none">
-                          <path d="M5 4C5 4.55228 4.55228 5 4 5C3.44772 5 3 4.55228 3 4C3 3.44772 3.44772 3 4 3C4.55228 3 5 3.44772 5 4ZM5 7.5C5 8.05228 4.55228 8.5 4 8.5C3.44772 8.5 3 8.05228 3 7.5C3 6.94772 3.44772 6.5 4 6.5C4.55228 6.5 5 6.94772 5 7.5ZM4 12C4.55228 12 5 11.5523 5 11C5 10.4477 4.55228 10 4 10C3.44772 10 3 10.4477 3 11C3 11.5523 3.44772 12 4 12ZM11 5C11.5523 5 12 4.55228 12 4C12 3.44772 11.5523 3 11 3C10.4477 3 10 3.44772 10 4C10 4.55228 10.4477 5 11 5ZM12 7.5C12 8.05228 11.5523 8.5 11 8.5C10.4477 8.5 10 8.05228 10 7.5C10 6.94772 10.4477 6.5 11 6.5C11.5523 6.5 12 6.94772 12 7.5ZM11 12C11.5523 12 12 11.5523 12 11C12 10.4477 11.5523 10 11 10C10.4477 10 10 10.4477 10 11C10 11.5523 10.4477 12 11 12Z" fill="currentColor" />
-                        </svg>
-                      </div>
-
-                      <span className="text-[10px] font-mono text-zinc-700 w-4 text-center">{index + 1}</span>
-
-                      <input
-                        placeholder={t.trackTitlePlaceholder}
-                        className="bg-transparent flex-1 outline-none text-[11px] font-bold uppercase tracking-tighter text-white"
-                        value={track.title}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onChange={(e) => {
-                          const newTracks = [...tracks]
-                          newTracks[index].title = e.target.value
-                          setTracks(newTracks)
-                        }}
-                      />
-
-                      {/* Инпут аудиофайла с мгновенным триггером замера длительности */}
-                      <label className="cursor-pointer p-2 hover:bg-white/5 rounded-lg transition" onMouseDown={(e) => e.stopPropagation()}>
-                        <input
-                          type="file"
-                          accept="audio/*"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0] || null
-                            const newTracks = [...tracks]
-                            newTracks[index].file = file
-
-                            if (file) {
-                              // Снимаем тайминги "на лету" до публикации
-                              const trackDuration = await getDuration(file)
-                              newTracks[index].duration = trackDuration
-                            } else {
-                              newTracks[index].duration = null
-                            }
-                            setTracks(newTracks)
-                          }}
-                        />
-                        {track.file ? <Check size={12} className="text-white" /> : <Plus size={12} className="text-zinc-600" />}
-                      </label>
-
-                      {tracks.length > 1 && (
-                        <button
-                          onClick={() => removeTrack(track.id)}
-                          className="p-2 text-zinc-700 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10"
-                          title={t.removeTrackTitle}
-                        >
-                          <X size={12} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-
-                  <button
-                    onClick={() => setTracks([...tracks, { id: `track-upload-id-${Date.now()}`, title: '', file: null, duration: null }])}
-                    className="w-full py-2 border border-dashed border-white/10 rounded-xl text-[9px] font-black uppercase tracking-widest text-zinc-600 hover:text-zinc-400 transition-colors"
-                  >
-                    {t.addTrackBtn}
-                  </button>
+                {/* Артисты релиза */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-zinc-400 ml-1">
+                    {$t.releaseArtistsLabel}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={$t.collaboratorsPlaceholder}
+                    className="w-full bg-black border border-white/5 p-2.5 rounded-xl focus:border-white/20 outline-none transition text-xs font-medium tracking-tight text-white placeholder:text-zinc-600"
+                    value={releaseCollaborators}
+                    onChange={e => setReleaseCollaborators(e.target.value)}
+                  />
                 </div>
 
-                {/* Cover Artwork */}
+                {/* Треклист */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-600 ml-1">{t.coverImageLabel}</label>
-                  <label className={`flex items-center justify-between p-3 bg-black border rounded-xl cursor-pointer transition-all ${coverFile ? 'border-white/20' : 'border-white/5 hover:border-white/10'}`}>
+                  <label className="text-[11px] font-black uppercase tracking-wider text-zinc-400 ml-1">
+                    {$t.tracksLabel}
+                  </label>
+                  <div className="max-h-[160px] overflow-y-auto pr-1 custom-scrollbar flex flex-col gap-y-2">
+                    {tracks.map((track, index) => (
+                      <div key={track.id} className="flex gap-2 items-center bg-black/40 p-2 rounded-xl border border-white/5 group">
+                        <span className="text-[11px] font-mono font-bold text-zinc-600 w-4 text-center">
+                          {index + 1}
+                        </span>
+                        <div className="flex-1 flex flex-col gap-0.5">
+                          <input
+                            placeholder={$t.trackTitlePlaceholder}
+                            className="bg-transparent w-full outline-none text-xs font-bold tracking-tight text-white placeholder:text-zinc-600"
+                            value={track.title}
+                            onChange={(e) => {
+                              const newTracks = [...tracks]
+                              newTracks[index].title = e.target.value
+                              setTracks(newTracks)
+                            }}
+                          />
+                          <input
+                            placeholder={$t.collaboratorsPlaceholder}
+                            className="bg-transparent w-full outline-none text-[10px] font-medium tracking-tight text-zinc-500 focus:text-zinc-300 transition-colors placeholder:text-zinc-700"
+                            value={track.collaborators || ''}
+                            onChange={(e) => {
+                              const newTracks = [...tracks]
+                              newTracks[index].collaborators = e.target.value
+                              setTracks(newTracks)
+                            }}
+                          />
+                        </div>
+
+                        <label className="cursor-pointer p-1.5 hover:bg-white/5 rounded-lg transition flex-shrink-0">
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0] || null
+                              const newTracks = [...tracks]
+                              newTracks[index].file = file
+                              if (file) {
+                                newTracks[index].duration = await getDuration(file)
+                              } else {
+                                newTracks[index].duration = null
+                              }
+                              setTracks(newTracks)
+                            }}
+                          />
+                          {track.file ? <Check size={14} className="text-white" /> : <Plus size={14} className="text-zinc-500" />}
+                        </label>
+
+                        {tracks.length > 1 && (
+                          <button
+                            onClick={() => removeTrack(track.id)}
+                            className="p-1.5 text-zinc-600 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10 flex-shrink-0"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      onClick={() => setTracks([...tracks, { id: `track-upload-id-${Date.now()}`, title: '', file: null, duration: null, collaborators: '' }])}
+                      className="w-full py-2 border border-dashed border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      {$t.addTrackBtn}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Обложка */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-zinc-400 ml-1">
+                    {$t.coverImageLabel}
+                  </label>
+                  <label className={`flex items-center justify-between p-2.5 bg-black border rounded-xl cursor-pointer transition-all ${coverFile ? 'border-white/20' : 'border-white/5 hover:border-white/10'}`}>
                     <input type="file" accept="image/*" className="hidden" onChange={e => setCoverFile(e.target.files?.[0] || null)} />
-                    <span className="text-[11px] font-bold text-zinc-500 uppercase">
-                      {coverFile ? t.imageReady : t.selectArtwork}
+                    <span className="text-xs font-bold text-zinc-400">
+                      {coverFile ? coverFile.name : $t.selectFilePlaceholder}
                     </span>
-                    {coverFile ? <Check size={14} className="text-white" /> : <ImageIcon size={14} className="text-zinc-700" />}
+                    {coverFile ? <Check size={14} className="text-white" /> : <ImageIcon size={14} className="text-zinc-600" />}
                   </label>
                 </div>
 
-                {/* Submit */}
+                {/* Кнопка публикации */}
                 <button
                   onClick={handleUpload}
                   disabled={loading}
-                  className="w-full bg-white text-black py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] hover:bg-zinc-200 transition-all active:scale-[0.98] mt-4 shadow-xl"
+                  className="w-full bg-white text-black py-3.5 rounded-xl font-black uppercase tracking-widest text-xs hover:bg-zinc-200 transition-all active:scale-[0.98] mt-2 shadow-xl disabled:opacity-50 flex-shrink-0"
                 >
-                  {loading ? t.processing : t.publishRelease}
+                  {loading ? $t.processing : $t.publishRelease}
                 </button>
               </div>
             </motion.div>

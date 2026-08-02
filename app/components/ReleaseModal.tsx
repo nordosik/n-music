@@ -1,14 +1,110 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom' // Подключили порталы
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, X, Maximize2, Share2, Download, BookOpen, Save } from 'lucide-react'
+import { Play, Pause, X, Maximize2, Share2, Download, BookOpen, Save, Heart } from 'lucide-react'
 import { usePlayer } from '../lib/usePlayer'
 import { supabase } from '../lib/supabase'
 import { locales } from '../lib/locales'
 import DownloadButton from "./DownloadButton"
 import JSZip from 'jszip'
 import React, { memo } from 'react'
+
+function TrackArtistsTooltip({
+  artists,
+  isCurrentTrack,
+  $t
+}: {
+  artists: string[];
+  isCurrentTrack: boolean;
+  $t?: any;
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [isTruncated, setIsTruncated] = useState(false)
+  const textRef = useRef<HTMLDivElement>(null)
+  const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Проверяем, обрезается ли текст прямо сейчас
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (textRef.current) {
+        const hasOverflow = textRef.current.scrollWidth > textRef.current.clientWidth
+        setIsTruncated(hasOverflow)
+      }
+    }
+
+    checkOverflow()
+    window.addEventListener('resize', checkOverflow)
+    return () => window.removeEventListener('resize', checkOverflow)
+  }, [artists])
+
+  const handleMouseEnter = () => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current)
+    setIsOpen(true)
+  }
+
+  const handleMouseLeave = () => {
+    closeTimeoutRef.current = setTimeout(() => {
+      setIsOpen(false)
+    }, 200)
+  }
+
+  return (
+    <div
+      className="relative inline-block max-w-full min-w-0"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Строка с ограничением ширины и троеточием при переполнении */}
+      <div
+        ref={textRef}
+        className="w-full truncate overflow-hidden whitespace-nowrap block cursor-pointer"
+      >
+        {artists.map((artist, idx) => (
+          <span key={idx} className="inline">
+            <span
+              onClick={(e) => {
+                e.stopPropagation()
+                usePlayer.getState().openArtistModal(artist)
+              }}
+              className={`transition-colors ${isCurrentTrack ? 'text-zinc-400 hover:text-white' : 'text-zinc-600 hover:text-white'}`}
+            >
+              {artist}
+            </span>
+            {idx < artists.length - 1 && <span className="text-zinc-500 mr-1">, </span>}
+          </span>
+        ))}
+      </div>
+
+      {/* Тултип появится ТОЛЬКО если текст реально обрезан */}
+      {isTruncated && isOpen && (
+        <div className="absolute left-0 top-full pt-1.5 z-50 pointer-events-auto before:content-[''] before:absolute before:-top-3 before:left-0 before:right-0 before:h-4">
+          <div className="flex flex-col bg-zinc-900/95 backdrop-blur-md border border-white/10 p-2.5 rounded-xl shadow-2xl animate-in fade-in slide-in-from-top-1 duration-150 w-max max-w-[260px]">
+            <span className="text-[9px] font-black tracking-widest text-zinc-500 uppercase mb-1 px-1">
+              {$t?.artistsTooltip || $t?.artists || 'Исполнители:'}
+            </span>
+            <div className="flex items-center flex-wrap gap-1">
+              {artists.map((artist, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    usePlayer.getState().openArtistModal(artist)
+                  }}
+                  className="text-xs font-bold text-zinc-200 hover:text-white transition-colors cursor-pointer bg-white/5 hover:bg-white/10 px-2 py-1 rounded-md"
+                >
+                  {artist}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Микро-анализатор обложки: сжимает картинку до 1х1 пикселя в Canvas и вытаскивает средний цвет
 const getAverageColor = (imgElement: HTMLImageElement): string => {
@@ -32,8 +128,23 @@ const getAverageColor = (imgElement: HTMLImageElement): string => {
   }
 };
 
+// Функция для правильного склонения
+function getTrackWord(count: number, lang: string, t: any) {
+  if (lang !== 'ru') {
+    return count === 1 ? t.track : t.tracks
+  }
 
-export default function ReleaseModal({ release, isOpen, onClose, tracks, isAdmin }: any) {
+  const abs = Math.abs(count) % 100
+  const lastDigit = abs % 10
+
+  if (abs > 10 && abs < 20) return 'ТРЕКОВ'
+  if (lastDigit > 1 && lastDigit < 5) return 'ТРЕКА'
+  if (lastDigit === 1) return 'ТРЕК'
+
+  return 'ТРЕКОВ'
+}
+
+export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTracks, isAdmin }: any) {
   const { setQueue, activeTrack, isPlaying, togglePlay, setIsPlaying, language } = usePlayer()
   const [copied, setCopied] = useState(false)
   const [isDownloadOpen, setIsDownloadOpen] = useState(false)
@@ -42,6 +153,33 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks, isAdmin
   const [isSaving, setIsSaving] = useState(false)
   const [isLightboxOpen, setIsLightboxOpen] = useState(false)
   const [detectedGlow, setDetectedGlow] = useState('rgba(255,255,255,0.12)')
+
+  // Безопасный парсинг артистов трека или релиза
+  const parseCollaborators = (target: any): string[] => {
+    const mainArtist = 'NORDOSIK';
+    if (!target) return [mainArtist];
+
+    if (typeof target.collaborators === 'string' && target.collaborators.trim().length > 0) {
+      const list = target.collaborators
+        .split(',')
+        .map((c: string) => c.trim())
+        .filter((c: string) => c.length > 0);
+      return [mainArtist, ...list];
+    }
+
+    if (Array.isArray(target.track_collaborators) && target.track_collaborators.length > 0) {
+      const list = target.track_collaborators
+        .map((item: any) => item.artist_name || item.name)
+        .filter(Boolean);
+      return [mainArtist, ...list];
+    }
+
+    if (Array.isArray(target.collaborators) && target.collaborators.length > 0) {
+      return [mainArtist, ...target.collaborators.filter(Boolean)];
+    }
+
+    return [mainArtist];
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -95,6 +233,21 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks, isAdmin
 
 
   if (!release) return null
+
+  // Если треки переданы внутри объекта release_tracks (через новую промежуточную таблицу)
+  const tracks = (
+    Array.isArray(release.release_tracks) && release.release_tracks.length > 0
+      ? release.release_tracks
+        .sort((a: any, b: any) => (a.track_number || 0) - (b.track_number || 0))
+        .map((item: any) => item.tracks)
+        .filter(Boolean)
+      : (rawTracks || [])
+  ).map((track: any) => ({
+    ...track,
+    // Если у трека нет своей обложки, подставляем обложку релиза
+    cover_url: track.cover_url || release.cover_url || release.cover,
+    release_title: release.title
+  }));
 
   const formatDuration = (s: any) => {
     const seconds = Math.floor(Number(s))
@@ -176,9 +329,16 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks, isAdmin
           >
             {!isDownloadOpen && !isCommentaryOpen && (
               <div className="absolute top-6 right-6 z-50 flex items-center gap-3">
-                <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition text-zinc-500">
-                  <X size={20} />
-                </button>
+                {/* Мой упругий брутальный крестик карточки релиза */}
+                <motion.button
+                  onClick={onClose}
+                  whileHover={{ scale: 1.15, rotate: 90, color: "#ef4444" }}
+                  whileTap={{ scale: 0.85 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                  className="text-zinc-500 transition-colors text-4xl font-mono select-none cursor-pointer"
+                >
+                  ×
+                </motion.button>
               </div>
             )}
 
@@ -243,22 +403,65 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks, isAdmin
                     {release.title}
                   </h1>
 
-                  <div className="flex flex-wrap items-center text-[12px] font-black uppercase mb-5 text-zinc-500 max-w-full gap-y-1.5">
-                    <span className="text-white hover:underline cursor-pointer tracking-tighter">NORDOSIK</span>
+                  <div className="flex flex-wrap items-center text-[12px] font-black mb-5 text-zinc-500 max-w-full gap-y-1.5 select-none">
+                    {/* Автоматически собираем всех артистов релиза и его треков */}
+                    {(() => {
+                      const allCollabs = new Set<string>();
+                      allCollabs.add('NORDOSIK');
+                      if (release?.collaborators) {
+                        parseCollaborators(release).forEach(a => allCollabs.add(a));
+                      }
+                      if (Array.isArray(tracks)) {
+                        tracks.forEach((t: any) => {
+                          parseCollaborators(t).forEach(a => allCollabs.add(a));
+                        });
+                      }
+                      const artistsList = Array.from(allCollabs);
+                      return artistsList.map((artist: string, idx: number) => (
+                        <span key={`release-header-artist-${artist}-${idx}`} className="inline-flex items-center">
+                          <motion.span
+                            whileHover={{ color: "#ffffff" }}
+                            whileTap={{ scale: 0.96 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              usePlayer.getState().openArtistModal(artist);
+                            }}
+                            className="text-white hover:underline cursor-pointer transition-colors"
+                          >
+                            {artist}
+                          </motion.span>
+                          {idx < artistsList.length - 1 && (
+                            <span className="text-zinc-600 mx-2 font-normal">•</span>
+                          )}
+                        </span>
+                      ));
+                    })()}
                     <span className="mx-1.5 font-normal">•</span>
                     <span className="tracking-tighter">{formatFullDate(release.created_at)}</span>
                     <span className="mx-1.5 font-normal">•</span>
-                    <span className="tracking-tighter">{tracks.length} {tracks.length === 1 ? t.track : t.tracks}</span>
+                    {/* Добавили uppercase обратно для количества треков */}
+                    <span className="tracking-tighter uppercase">
+                      {tracks.length} {getTrackWord(tracks.length, language, t)}
+                    </span>
                     {(() => {
-                      const totalSec = release.duration > 0 ? release.duration : tracks.reduce((sum: number, t: any) => sum + (Number(t.duration) || 0), 0);
-                      if (totalSec > 0) return <><span className="mx-1.5 font-normal">•</span><span className="tracking-tighter text-zinc-500">{formatTotalDuration(totalSec)}</span></>;
+                      const totalSec = release.duration > 0
+                        ? release.duration
+                        : tracks.reduce((sum: number, t: any) => sum + (Number(t.duration) || 0), 0);
+                      if (totalSec > 0) return (
+                        <>
+                          <span className="mx-1.5 font-normal">•</span>
+                          <span className="tracking-tighter text-zinc-500">{formatTotalDuration(totalSec)}</span>
+                        </>
+                      );
                       return null;
                     })()}
                     <span className="mx-1.5 font-normal">•</span>
-
-                    <button onClick={() => setIsCommentaryOpen(true)} className="inline-flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-2.5 py-0.5 rounded-md border border-white/5 flex-shrink-0">
+                    <button
+                      onClick={() => setIsCommentaryOpen(true)}
+                      className="inline-flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-2.5 py-0.5 rounded-md border border-white/5 flex-shrink-0"
+                    >
                       <BookOpen size={12} strokeWidth={2.5} />
-                      <span className="text-[10px] font-black tracking-widest">{t.story}</span>
+                      <span className="text-[10px] font-black tracking-widest uppercase">{t.story}</span>
                     </button>
                   </div>
 
@@ -308,63 +511,107 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks, isAdmin
                       onClick={() => {
                         setQueue(tracks, i);
                         setIsPlaying(true);
-                        window.dispatchEvent(new CustomEvent('toggle-player', { detail: false }));
+                        window.dispatchEvent(new CustomEvent('toggle-player', {
+                          detail: false
+                        }));
                         onClose();
                       }}
-                      className={`grid grid-cols-[30px_1fr_auto_45px] gap-4 p-3 rounded-lg cursor-pointer items-center transition-all duration-300 relative border ${isNowPlaying
-                        ? isEcosystemTrack
-                          ? 'bg-emerald-950/20 border-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.3),inset_0_0_15px_rgba(52,211,153,0.1)] scale-[1.01]'
-                          : isHotNew
-                            ? 'bg-red-950/20 border-red-500 shadow-[0_0_25px_rgba(239,68,68,0.3),inset_0_0_15px_rgba(239,68,68,0.1)] scale-[1.01]'
-                            : 'bg-white/5 border-white/20 shadow-[0_0_20px_rgba(255,255,255,0.05)] scale-[1.01]'
-                        : isEcosystemTrack
-                          ? 'bg-zinc-900/20 border-emerald-500/10 hover:border-emerald-500/30'
-                          : isHotNew
-                            ? 'bg-zinc-900/20 border-red-500/10 animate-fire-glow hover:border-red-500/30'
-                            : 'bg-transparent border-transparent hover:bg-white/5'
+                      className={`flex items-center justify-between gap-4 p-3 group
+rounded-lg cursor-pointer transition-all duration-300 relative 
+border ${isNowPlaying
+                          ? isEcosystemTrack
+                            ? 'bg-emerald-950/20 border-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.3),inset_0_0_15px_rgba(52,211,153,0.1)] scale-[1.01]'
+                            : isHotNew
+                              ? 'bg-red-950/20 border-red-500 shadow-[0_0_25px_rgba(239,68,68,0.3),inset_0_0_15px_rgba(239,68,68,0.1)] scale-[1.01]'
+                              : 'bg-white/5 border-white/20 shadow-[0_0_20px_rgba(255,255,255,0.05)] scale-[1.01]'
+                          : isEcosystemTrack
+                            ? 'bg-zinc-900/20 border-emerald-500/10 hover:border-emerald-500/30'
+                            : isHotNew
+                              ? 'bg-zinc-900/20 border-red-500/10 animate-fire-glow hover:border-red-500/30'
+                              : 'bg-transparent border-transparent hover:bg-white/5'
                         }`}
                     >
-                      <span className="flex items-center justify-center text-sm font-mono flex-shrink-0 w-[30px]">
-                        {isNowPlaying ? (
-                          <EqualizerIcon />
-                        ) : (
-                          <span className={isCurrentTrack ? "text-white font-bold" : "text-zinc-600 group-hover:text-zinc-400 transition-colors"}>
-                            {i + 1}
-                          </span>
-                        )}
-                      </span>
 
-                      <div className="flex flex-col min-w-0 justify-center">
-                        <span className={`font-black text-sm uppercase tracking-wide truncate transition-colors duration-300 ${isCurrentTrack ? 'text-white' : 'text-zinc-400 group-hover:text-white'}`}>
-                          {track.title}
+                      <div className="flex items-center gap-4 min-w-0 flex-1 pr-4">
+                        <span className="flex items-center justify-center text-sm font-mono flex-shrink-0 w-[30px]">
+                          {isNowPlaying ? (
+                            <EqualizerIcon />
+                          ) : (
+                            <span className={isCurrentTrack ? "text-white font-bold" : "text-zinc-600 group-hover:text-zinc-400 transition-colors"}>
+                              {i + 1}
+                            </span>
+                          )}
                         </span>
 
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className={`text-[9px] uppercase font-black tracking-widest ${isCurrentTrack ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                            NORDOSIK
+                        <div className="flex flex-col min-w-0 justify-center">
+                          <span className={`font-black text-sm tracking-wide truncate transition-colors duration-300 ${isCurrentTrack ? 'text-white' : 'text-zinc-400 group-hover:text-white'}`}>
+                            {track.title}
                           </span>
+
+                          {/* Интерактивная цепочка артистов с устойчивым тултипом */}
+                          <div className="flex items-center gap-1 mt-0.5 text-[9px] font-black tracking-widest">
+                            <TrackArtistsTooltip
+                              artists={parseCollaborators(track)}
+                              isCurrentTrack={isCurrentTrack}
+                            />
+                            {isEcosystemTrack && (
+                              <span className="text-[9px] uppercase font-black tracking-widest text-emerald-500/80 ml-1.5">
+                                {t.singleReleaseNotice}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end flex-shrink-0 ml-2">
                           {isEcosystemTrack && (
-                            <span className="text-[9px] uppercase font-black tracking-widest text-emerald-500/80">
-                              {t.singleReleaseNotice}
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]" />
+                          )}
+                          {isHotNew && (
+                            <span className="text-[8px] font-black px-1.5 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-sm tracking-widest">
+                              HOT
                             </span>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-end flex-shrink-0">
-                        {isEcosystemTrack && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]" />
-                        )}
-                        {isHotNew && (
-                          <span className="text-[8px] font-black px-1.5 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-sm tracking-widest">
-                            HOT
+                      {/* ЦЕНТРАЛЬНЫЙ БЛОК: СЧЕТЧИК БЕЗ НУЛЕЙ, ВИДЕН ВСЕГДА */}
+                      <div className="flex items-center justify-center flex-1 px-4">
+                        {track.plays_count && track.plays_count > 0 ? (
+                          <span className={`text-sm md:text-base font-mono font-normal tracking-tighter ${isCurrentTrack ? 'text-white' : 'text-zinc-500'}`}>
+                            {track.plays_count.toLocaleString('en-US')}
                           </span>
+                        ) : (
+                          <div className="w-1" />
                         )}
                       </div>
 
-                      <span className={`flex items-center justify-end text-xs font-mono w-11 text-right transition-colors ${isCurrentTrack ? 'text-white' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
-                        {formatDuration(track.duration)}
-                      </span>
+                      {/* ПРАВЫЙ БЛОК: СТИЛЬНОЕ ПРУЖИНЯЩЕЕ СЕРДЕЧКО + ДЛИТЕЛЬНОСТЬ */}
+                      <div className="flex items-center gap-6 flex-shrink-0 pl-4">
+
+                        {/* КНОПКА ЛАЙКА С АНИМАЦИЕЙ НА FRAMER MOTION */}
+                        <motion.button
+                          onClick={(e) => {
+                            e.stopPropagation(); // Чтобы не запускался сам трек
+                            console.log('Клик по сердечку трека:', track.title);
+                          }}
+                          whileHover={{ scale: 1.12 }}
+                          whileTap={{ scale: 0.85 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                          className="text-zinc-500 hover:text-white transition-colors p-1.5 flex items-center justify-center"
+                        >
+                          <Heart
+                            size={20}
+                            strokeWidth={2.8}
+                            className="drop-shadow-[0_0_8px_rgba(255,255,255,0.1)]"
+                          />
+                        </motion.button>
+
+                        {/* ДЛИТЕЛЬНОСТЬ ТРЕКА */}
+                        <span className={`text-xs font-mono w-11 text-right transition-colors ${isCurrentTrack ? 'text-white' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
+                          {formatDuration(track.duration)}
+                        </span>
+
+                      </div>
                     </div>
                   )
                 })}
@@ -394,9 +641,15 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks, isAdmin
                       className="relative w-full max-w-2xl h-[540px] bg-[#121212] border border-white/10 shadow-[0_0_100px_rgba(0,0,0,1)] flex flex-col rounded-[32px] overflow-hidden z-10"
                     >
                       <div className="flex flex-col items-center justify-center px-6 pt-8 pb-5 border-b border-white/5 bg-[#161616] relative flex-shrink-0">
-                        <button onClick={() => setIsDownloadOpen(false)} className="absolute top-6 right-6 flex items-center justify-center w-9 h-9 bg-white text-black rounded-full hover:scale-110 transition-all active:scale-90 shadow-2xl">
-                          <X size={18} strokeWidth={3} />
-                        </button>
+                        <motion.button
+                          onClick={() => setIsDownloadOpen(false)}
+                          whileHover={{ scale: 1.2, rotate: 90, color: "#ef4444" }}
+                          whileTap={{ scale: 0.85 }}
+                          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                          className="absolute top-6 right-6 text-zinc-500 transition-colors text-2xl font-mono select-none z-10"
+                        >
+                          ×
+                        </motion.button>
                         <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.5em] mb-2 opacity-50">{t.downloadManager}</span>
                         <h2 className="text-2xl font-black text-white uppercase tracking-tighter text-center leading-none">{release.title}</h2>
 
@@ -460,8 +713,12 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks, isAdmin
                               <div className="flex items-center gap-x-6 min-w-0">
                                 <span className="text-[12px] font-black text-zinc-700 w-6 text-left group-hover:text-zinc-400">{i + 1}</span>
                                 <div className="flex flex-col truncate">
-                                  <span className="font-bold text-[15px] text-zinc-200 group-hover:text-white truncate uppercase tracking-tight">{track.title}</span>
-                                  <span className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.2em] mt-0.5">NORDOSIK</span>
+                                  <span className="font-bold text-[15px] text-zinc-200 group-hover:text-white truncate uppercase tracking-tight">
+                                    {track.title}
+                                  </span>
+                                  <span className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.2em] mt-0.5 truncate">
+                                    {parseCollaborators(track).join(', ')}
+                                  </span>
                                 </div>
                               </div>
                               <div className="flex items-center gap-x-5 flex-shrink-0">
@@ -505,9 +762,15 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks, isAdmin
                       className="relative w-full max-w-2xl h-[540px] bg-[#121212] border border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.8)] flex flex-col rounded-[32px] overflow-hidden z-10"
                     >
                       <div className="flex flex-col items-center justify-center px-6 pt-6 pb-4 border-b border-white/5 bg-[#161616] relative flex-shrink-0">
-                        <button onClick={() => setIsCommentaryOpen(false)} className="absolute top-6 right-6 flex items-center justify-center w-9 h-9 bg-white text-black rounded-full hover:scale-110 transition-all active:scale-90 shadow-2xl z-10">
-                          <X size={18} strokeWidth={3} />
-                        </button>
+                        <motion.button
+                          onClick={() => setIsCommentaryOpen(false)}
+                          whileHover={{ scale: 1.2, rotate: 90, color: "#ef4444" }}
+                          whileTap={{ scale: 0.85 }}
+                          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                          className="absolute top-6 right-6 text-zinc-500 transition-colors text-2xl font-mono select-none z-10"
+                        >
+                          ×
+                        </motion.button>
                         <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.5em] mb-2 opacity-50">{t.releaseBackground}</span>
                         <h2 className="text-xl font-black text-white uppercase tracking-tighter text-center leading-none">{t.story}</h2>
                       </div>

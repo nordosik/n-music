@@ -89,3 +89,18 @@ body.modal-open {
 .animate-fire-glow {
   animation: fireGlow 3s ease-in-out infinite;
 }
+
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes shine {
+  100% {
+    left: 125%;
+  }
+}

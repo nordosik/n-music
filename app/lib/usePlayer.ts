@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { supabase } from './supabase' // Импорт инициализированного клиента
 
 export type RepeatMode = 'off' | 'one' | 'all';
 
@@ -13,6 +14,7 @@ interface Track {
   lyrics?: string;
   is_ecosystem?: boolean;
   is_hot?: boolean;
+  plays_count?: number;
 }
 
 interface PlayerStore {
@@ -24,44 +26,39 @@ interface PlayerStore {
   isLyricsOpen: boolean
   repeatMode: RepeatMode
   isShuffle: boolean
-
-  // Состояния громкости
   volume: number
   prevVolume: number
-
-  // Кэш скролла текстов
   lyricsScrollPositions: Record<string | number, number>
+  currentTime: number
+  language: 'ru' | 'en'
+  listenTimeoutId: NodeJS.Timeout | null
 
-  // Экшены управления интерфейсом
   setIsLyricsOpen: (open: boolean) => void
   setActiveTrack: (track: Track) => void
   setQueue: (tracks: Track[], index?: number) => void
   setIsPlaying: (playing: boolean) => void
-
-  // Экшены громкости
   setVolume: (value: number) => void
   setPrevVolume: (value: number) => void
   toggleMute: () => void
-
-  // Экшены кэша скролла
   setLyricsScrollPosition: (trackId: string | number, position: number) => void
-
-  // Логика воспроизведения
   playNext: (isAutoEnded?: boolean) => void
   playPrevious: () => void
-  currentTime: number
   setCurrentTime: (time: number) => void
   togglePlay: () => void
   toggleRepeat: () => void
   toggleShuffle: () => void
-
-  // UX Локализация (Добавляем сюда)
-  language: 'ru' | 'en'
   toggleLanguage: () => void
+  // === Управление глобальной модалкой артистов ===
+  isArtistModalOpen: boolean
+  activeArtistName: string | null
+  openArtistModal: (name: string) => void
+  closeArtistModal: () => void
+  isTopPanelOpen: boolean
+  setIsTopPanelOpen: (open: boolean) => void
   setLanguage: (lang: 'ru' | 'en') => void
+  stopListenTimer: () => void
 }
 
-// Вспомогательная функция для честного перемешивания массива (Фишер-Йетс)
 const shuffleArray = (array: Track[], excludeTrackId: string | number): Track[] => {
   const filtered = array.filter(t => t.id !== excludeTrackId);
   for (let i = filtered.length - 1; i > 0; i--) {
@@ -69,6 +66,45 @@ const shuffleArray = (array: Track[], excludeTrackId: string | number): Track[] 
     [filtered[i], filtered[j]] = [filtered[j], filtered[i]];
   }
   return filtered;
+};
+
+// Функция запуска таймера прослушивания на чистом клиенте
+const startListenTimer = (set: any, get: any, track: Track) => {
+  const currentTimeout = get().listenTimeoutId;
+  if (currentTimeout) clearTimeout(currentTimeout);
+
+  // Игнорируем мои стримы, пока я разрабатываю на localhost
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    console.log(`[Analytics] Локальный запуск. Стрим трека "${track.title}" проигнорирован.`);
+    return;
+  }
+
+  // Считаем стрим, если играет дольше 30 сек (или меньше, если трек короткий)
+  const threshold = Math.min(30, track.duration || 30) * 1000;
+
+  const timeoutId = setTimeout(async () => {
+    try {
+      // Передаем ID как есть (в виде строки/UUID)
+      const trackId = track.id;
+
+      console.log(`[Analytics] Отправка стрима для UUID: ${trackId}...`);
+
+      const { error } = await supabase.rpc('increment_track_plays', {
+        target_track_id: trackId
+      });
+
+      if (error) {
+        console.error('[Analytics Error] Supabase вернул ошибку:', error.message);
+        return;
+      }
+
+      console.log(`[Analytics] Стрим успешно засчитан в базе для: ${track.title}`);
+    } catch (error: any) {
+      console.error('[Analytics Error] Критическая ошибка:', error?.message || error);
+    }
+  }, threshold);
+
+  set({ listenTimeoutId: timeoutId });
 };
 
 export const usePlayer = create<PlayerStore>((set, get) => ({
@@ -80,35 +116,29 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
   isLyricsOpen: false,
   repeatMode: 'off',
   isShuffle: false,
-
-  // Дефолтные значения громкости
   volume: 1,
   prevVolume: 1,
-
-  // Дефолтный кэш скролла
   lyricsScrollPositions: {},
-
-  // И ДУБЛИРУЙ СЮДА ДЕФОЛТНОЕ ВРЕМЯ:
   currentTime: 0,
-
-  // 1. Дефолтное значение языка с безопасной проверкой на SSR (Next.js)
   language: 'ru',
+  listenTimeoutId: null,
 
   setIsLyricsOpen: (open) => set({ isLyricsOpen: open }),
-
   setCurrentTime: (time) => set({ currentTime: time }),
 
-  setActiveTrack: (track: Track) => set({
-    activeTrack: track,
-    isPlaying: true,
-    queue: [track],
-    originalQueue: [track],
-    currentIndex: 0
-  }),
+  setActiveTrack: (track: Track) => {
+    set({
+      activeTrack: track,
+      isPlaying: true,
+      queue: [track],
+      originalQueue: [track],
+      currentIndex: 0
+    });
+    startListenTimer(set, get, track);
+  },
 
   setVolume: (value) => set({ volume: value }),
   setPrevVolume: (value) => set({ prevVolume: value }),
-
   toggleMute: () => {
     const { volume, prevVolume, setVolume } = get();
     if (volume > 0) {
@@ -129,6 +159,7 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
   setQueue: (tracks: Track[], index = 0) => {
     const { isShuffle } = get();
     const selectedTrack = tracks[index];
+
     if (isShuffle && tracks.length > 1) {
       const shuffledRemaining = shuffleArray(tracks, selectedTrack.id);
       set({
@@ -147,39 +178,47 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
         isPlaying: true
       });
     }
+    startListenTimer(set, get, selectedTrack);
   },
 
   playNext: (isAutoEnded = false) => {
-    const { queue, originalQueue, activeTrack, currentIndex, repeatMode, isShuffle } = get();
+    const { queue, originalQueue, activeTrack, currentIndex, repeatMode, isShuffle, stopListenTimer } = get();
+
+    stopListenTimer();
 
     if (isAutoEnded && repeatMode === 'one') {
       return;
     }
-
     if (!isAutoEnded && repeatMode === 'one' && queue.length === 1) {
       const current = activeTrack;
       set({ activeTrack: null, isPlaying: false });
-      setTimeout(() => set({ activeTrack: current, isPlaying: true }), 30);
+      setTimeout(() => {
+        set({ activeTrack: current, isPlaying: true });
+        if (current) startListenTimer(set, get, current);
+      }, 30);
       return;
     }
-
     const isLastTrack = currentIndex === queue.length - 1;
     if (!isLastTrack) {
       const nextIndex = currentIndex + 1;
+      const nextTrack = queue[nextIndex];
       set({
         currentIndex: nextIndex,
-        activeTrack: queue[nextIndex],
+        activeTrack: nextTrack,
         isPlaying: true
       });
+      startListenTimer(set, get, nextTrack);
     } else {
       if (repeatMode === 'all') {
         if (queue.length === 1) {
           const current = activeTrack;
           set({ activeTrack: null, isPlaying: false });
-          setTimeout(() => set({ activeTrack: current, isPlaying: true }), 30);
+          setTimeout(() => {
+            set({ activeTrack: current, isPlaying: true });
+            if (current) startListenTimer(set, get, current);
+          }, 30);
         } else if (isShuffle) {
           const currentTrack = queue[currentIndex];
-          // Если трека почему-то нет в очереди, просто гасим плеер во избежание краша приложения
           if (!currentTrack) {
             set({ isPlaying: false });
             return;
@@ -192,12 +231,14 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
             activeTrack: newQueue[1],
             isPlaying: true
           });
+          startListenTimer(set, get, newQueue[1]);
         } else {
           set({
             currentIndex: 0,
             activeTrack: queue[0],
             isPlaying: true
           });
+          if (queue[0]) startListenTimer(set, get, queue[0]);
         }
       } else {
         set({ isPlaying: false });
@@ -206,23 +247,56 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
   },
 
   playPrevious: () => {
-    const { queue, currentIndex } = get();
+    const { queue, currentIndex, stopListenTimer } = get();
+
+    stopListenTimer();
+
     if (currentIndex > 0) {
       const nextIndex = currentIndex - 1;
+      const prevTrack = queue[nextIndex];
       set({
         currentIndex: nextIndex,
-        activeTrack: queue[nextIndex],
+        activeTrack: prevTrack,
         isPlaying: true
       });
+      startListenTimer(set, get, prevTrack);
     } else {
       const current = queue[0];
       set({ activeTrack: null, isPlaying: false });
-      setTimeout(() => set({ activeTrack: current, isPlaying: true }), 30);
+      setTimeout(() => {
+        set({ activeTrack: current, isPlaying: true });
+        if (current) startListenTimer(set, get, current);
+      }, 30);
     }
   },
 
-  setIsPlaying: (playing: boolean) => set({ isPlaying: playing }),
-  togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
+  stopListenTimer: () => {
+    const { listenTimeoutId } = get();
+    if (listenTimeoutId) {
+      clearTimeout(listenTimeoutId);
+      set({ listenTimeoutId: null });
+    }
+  },
+
+  setIsPlaying: (playing) => {
+    if (!playing) {
+      get().stopListenTimer();
+    } else {
+      const { activeTrack } = get();
+      if (activeTrack) startListenTimer(set, get, activeTrack);
+    }
+    set({ isPlaying: playing });
+  },
+
+  togglePlay: () => set((state) => {
+    const nextPlaying = !state.isPlaying;
+    if (!nextPlaying) {
+      get().stopListenTimer();
+    } else {
+      if (state.activeTrack) startListenTimer(set, get, state.activeTrack);
+    }
+    return { isPlaying: nextPlaying };
+  }),
 
   toggleRepeat: () => set((state) => {
     const nextModes: Record<RepeatMode, RepeatMode> = { off: 'one', one: 'all', all: 'off' };
@@ -272,7 +346,6 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     }
   }),
 
-  // 2. Добавляем экшен переключения языка в самый конец стора
   toggleLanguage: () => set((state) => {
     const nextLang = state.language === 'en' ? 'ru' : 'en';
     if (typeof window !== 'undefined') {
@@ -280,5 +353,17 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     }
     return { language: nextLang };
   }),
-  setLanguage: (lang) => set({ language: lang }), // Намертво внедряем экшен установки стейта языка
+
+  setLanguage: (lang) => set({ language: lang }),
+
+  // НОВАЯ ЛОГИКА ВЕРХНЕЙ ПАНЕЛИ
+  isTopPanelOpen: false,
+  setIsTopPanelOpen: (open) => set({ isTopPanelOpen: open }),
+
+  // === Реализация глобального стора для модалки ===
+  isArtistModalOpen: false,
+  activeArtistName: null,
+  openArtistModal: (name: string) => set({ isArtistModalOpen: true, activeArtistName: name }),
+  closeArtistModal: () => set({ isArtistModalOpen: false, activeArtistName: null }),
 }))
+
