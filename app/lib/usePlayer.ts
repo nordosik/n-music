@@ -15,6 +15,7 @@ interface Track {
   is_ecosystem?: boolean;
   is_hot?: boolean;
   plays_count?: number;
+  release_title?: string;
 }
 
 interface PlayerStore {

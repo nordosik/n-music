@@ -24,17 +24,19 @@ export default function TrackItem({ release, index, onClick }: TrackItemProps) {
     isPlaying &&
     activeTrack &&
     (
-      // 1. Если ID трека совпадает с ID карточки (для синглов, запущенных с главной)
+      // 1. Прямые совпадения ID
       activeTrack.id === release.id ||
-      // 2. Если UUID/ID релиза в треке совпадает с ID карточки (для альбомов)
       activeTrack.release_id === release.id ||
-      // 3. Если в `release_id` трека записана строка с названием релиза
+
+      // 2. Совпадения по названию релиза (от модалки или плеера)
       activeTrack.release_id === release.title ||
-      // 4. СУПЕР-ФИКС ДЛЯ СИНГЛОВ: Если название трека совпадает с названием релиза на карточке
-      (release.release_type === 'single' || !release.release_type
-        ? activeTrack.title === release.title
-        : false
-      )
+      activeTrack.release_title === release.title ||
+
+      // 3. Проверка: принадлежит ли активный трек списку треков этого релиза
+      (Array.isArray(release.tracks) && release.tracks.some((t: any) => t.id === activeTrack.id)) ||
+
+      // 4. Фоллбэк для синглов по названию
+      activeTrack.title === release.title
     )
   );
 

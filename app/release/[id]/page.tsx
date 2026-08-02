@@ -288,11 +288,10 @@ export default function ReleasePage() {
 
               <button
                 onClick={togglePlayer}
-                className={`p-3 rounded-full border transition-all ${
-                  playerHidden
+                className={`p-3 rounded-full border transition-all ${playerHidden
                     ? 'bg-white text-black border-white'
                     : 'bg-transparent text-zinc-500 border-white/10 hover:text-white'
-                }`}
+                  }`}
                 title={isMounted ? (playerHidden ? $t.showPlayer : $t.hidePlayer) : (playerHidden ? 'Show Player' : 'Hide Player')}
               >
                 {playerHidden ? <Music size={18} /> : <X size={18} />}
@@ -335,19 +334,18 @@ export default function ReleasePage() {
                       setQueue(tracks, i)
                       setIsPlaying(true)
                     }}
-                    className={`group flex items-center justify-between p-4 rounded-lg my-2 mx-0.5 cursor-pointer transition-all duration-300 relative border ${
-                      isCurrentTrackPlaying
+                    className={`group flex items-center justify-between p-4 rounded-lg my-2 mx-0.5 cursor-pointer transition-all duration-300 relative border ${isCurrentTrackPlaying
                         ? isEcosystemTrack
                           ? 'bg-emerald-950/20 border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.35),inset_0_0_12px_rgba(52,211,153,0.15)] scale-[1.01]'
                           : isHotNew
-                          ? 'bg-red-950/20 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.35),inset_0_0_12px_rgba(239,68,68,0.15)] scale-[1.01]'
-                          : 'bg-white/5 border-white/20 shadow-[0_0_20px_rgba(255,255,255,0.05)] scale-[1.01]'
+                            ? 'bg-red-950/20 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.35),inset_0_0_12px_rgba(239,68,68,0.15)] scale-[1.01]'
+                            : 'bg-white/5 border-white/20 shadow-[0_0_20px_rgba(255,255,255,0.05)] scale-[1.01]'
                         : isEcosystemTrack
-                        ? 'bg-zinc-900/10 border-emerald-500/10 hover:border-emerald-500/30'
-                        : isHotNew
-                        ? 'bg-zinc-900/10 border-red-500/10 hover:border-red-500/30'
-                        : 'bg-transparent border-transparent hover:bg-white/[0.02]'
-                    }`}
+                          ? 'bg-zinc-900/10 border-emerald-500/10 hover:border-emerald-500/30'
+                          : isHotNew
+                            ? 'bg-zinc-900/10 border-red-500/10 hover:border-red-500/30'
+                            : 'bg-transparent border-transparent hover:bg-white/[0.02]'
+                      }`}
                   >
                     <div className="flex items-center gap-6 min-w-0 flex-1 pr-4">
                       <span className="w-6 flex items-center justify-center text-[12px] font-mono flex-shrink-0">
@@ -361,9 +359,8 @@ export default function ReleasePage() {
                       </span>
 
                       <div className="flex flex-col min-w-0 flex-1 justify-center">
-                        <span className={`text-sm font-black uppercase tracking-wide truncate transition-colors duration-300 ${
-                          isCurrent ? 'text-white' : 'text-zinc-400 group-hover:text-white'
-                        }`}>
+                        <span className={`text-sm font-black uppercase tracking-wide break-words whitespace-normal transition-colors duration-300 ${isCurrent ? 'text-white' : 'text-zinc-400 group-hover:text-white'
+                          }`}>
                           {track.title}
                         </span>
 
@@ -385,9 +382,8 @@ export default function ReleasePage() {
                     {/* ПРОСЛУШИВАНИЯ */}
                     <div className="flex items-center justify-center flex-1 px-4">
                       {track.plays_count && track.plays_count > 0 ? (
-                        <span className={`text-sm md:text-base font-mono font-normal tracking-tighter relative z-20 ${
-                          isCurrent ? 'text-white' : 'text-zinc-500'
-                        }`}>
+                        <span className={`text-sm md:text-base font-mono font-normal tracking-tighter relative z-20 ${isCurrent ? 'text-white' : 'text-zinc-500'
+                          }`}>
                           {track.plays_count.toLocaleString('en-US')}
                         </span>
                       ) : (
@@ -420,9 +416,8 @@ export default function ReleasePage() {
                         </button>
                       </div>
 
-                      <span className={`text-[11px] font-mono w-11 text-right transition-colors ${
-                        isCurrent ? 'text-white' : 'text-zinc-600 group-hover:text-zinc-400'
-                      }`}>
+                      <span className={`text-[11px] font-mono w-11 text-right transition-colors ${isCurrent ? 'text-white' : 'text-zinc-600 group-hover:text-zinc-400'
+                        }`}>
                         {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, '0')}
                       </span>
                     </div>

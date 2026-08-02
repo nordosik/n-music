@@ -538,7 +538,7 @@ border ${isNowPlaying
                         }`}
                     >
 
-                      <div className="flex items-center gap-4 min-w-0 flex-1 pr-4">
+                      <div className="flex items-center gap-4 min-w-0 flex-1">
                         <span className="flex items-center justify-center text-sm font-mono flex-shrink-0 w-[30px]">
                           {isNowPlaying ? (
                             <EqualizerIcon />
@@ -550,7 +550,8 @@ border ${isNowPlaying
                         </span>
 
                         <div className="flex flex-col min-w-0 justify-center">
-                          <span className={`font-black text-sm tracking-wide truncate transition-colors duration-300 ${isCurrentTrack ? 'text-white' : 'text-zinc-400 group-hover:text-white'}`}>
+                          <span className={`font-black text-sm tracking-wide break-words whitespace-normal transition-colors duration-300 ${isCurrentTrack ? 'text-white' : 'text-zinc-400 group-hover:text-white'
+                            }`}>
                             {track.title}
                           </span>
 
@@ -581,7 +582,7 @@ border ${isNowPlaying
                       </div>
 
                       {/* ЦЕНТРАЛЬНЫЙ БЛОК: СЧЕТЧИК БЕЗ НУЛЕЙ, ВИДЕН ВСЕГДА */}
-                      <div className="flex items-center justify-center flex-1 px-4">
+                      <div className="flex items-center justify-end shrink-0 px-2 min-w-[70px]">
                         {track.plays_count && track.plays_count > 0 ? (
                           <span className={`text-sm md:text-base font-mono font-normal tracking-tighter ${isCurrentTrack ? 'text-white' : 'text-zinc-500'}`}>
                             {track.plays_count.toLocaleString('en-US')}
