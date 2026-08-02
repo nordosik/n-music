@@ -239,13 +239,21 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
     Array.isArray(release.release_tracks) && release.release_tracks.length > 0
       ? release.release_tracks
         .sort((a: any, b: any) => (a.track_number || 0) - (b.track_number || 0))
-        .map((item: any) => item.tracks)
+        .map((item: any) => {
+          // Если данные трека внутри объекта item.tracks
+          const trackData = item.tracks || item;
+          return {
+            ...trackData,
+            // Если lyrics лежат в самой связи или внутри объекта tracks
+            lyrics: trackData.lyrics || item.lyrics || '',
+          };
+        })
         .filter(Boolean)
       : (rawTracks || [])
   ).map((track: any) => ({
     ...track,
-    // Если у трека нет своей обложки, подставляем обложку релиза
     cover_url: track.cover_url || release.cover_url || release.cover,
+    lyrics: track.lyrics || '',
     release_title: release.title
   }));
 
@@ -511,9 +519,7 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
                       onClick={() => {
                         setQueue(tracks, i);
                         setIsPlaying(true);
-                        window.dispatchEvent(new CustomEvent('toggle-player', {
-                          detail: false
-                        }));
+                        window.dispatchEvent(new CustomEvent('toggle-player', { detail: false })); // Исправили CustomeEvent -> CustomEvent
                         onClose();
                       }}
                       className={`flex items-center justify-between gap-4 p-3 group

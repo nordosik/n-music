@@ -81,12 +81,13 @@ function HomeContent() {
         plays_count,
         collaborators,
         is_ecosystem,
-        is_hot
+        is_hot,
+        lyrics
       )
     )
   `)
         .order('id', { ascending: false })
-        .order('track_number', { foreignTable: 'release_tracks', ascending: true }); // <--- Вот эта строчка сортирует треки прямо в БД
+        .order('track_number', { foreignTable: 'release_tracks', ascending: true });
 
       if (error || !releasesData) {
         console.error('Детали ошибки Supabase:', error?.message, error?.details, error?.hint);
@@ -96,7 +97,6 @@ function HomeContent() {
       // 2. Преобразуем структуру: достаем треки из release_tracks и привязываем обложку от релиза
       const enrichedReleases = releasesData.map((release: any) => {
         const sortedTracks = (release.release_tracks || [])
-          // Жесткая сортировка по числу track_number
           .sort((a: any, b: any) => (a.track_number || 0) - (b.track_number || 0))
           .map((item: any) => item.tracks)
           .filter(Boolean)
@@ -104,7 +104,8 @@ function HomeContent() {
             ...t,
             cover_url: release.cover_url,
             audio_url: t.audio_url,
-            collaborators: t.collaborators || ''
+            collaborators: t.collaborators || '',
+            lyrics: t.lyrics || '' // <-- Добавили явный фоллбэк на lyrics
           }));
 
         const trackCollabs = sortedTracks.length > 0 ? (sortedTracks[0].collaborators || '') : '';
@@ -136,14 +137,14 @@ function HomeContent() {
     if (release.tracks && release.tracks.length > 0) {
       setTracks(release.tracks);
     } else {
-      // Идеальный сингл-трек, который подхватит collaborators из релиза
       setTracks([{
         ...release,
         id: release.id,
         title: release.title,
         audio_url: release.audio_url,
         cover_url: release.cover_url,
-        collaborators: release.collaborators || ''
+        collaborators: release.collaborators || '',
+        lyrics: release.lyrics || ''
       }]);
     }
   };
