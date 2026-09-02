@@ -304,7 +304,10 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
     } catch (e: any) { alert(`Error saving: ${e.message}`) } finally { setIsSaving(false) }
   }
 
-  const isThisReleasePlaying = isPlaying && tracks.some((t: any) => t.id === activeTrack?.id)
+  const isThisReleasePlaying = isPlaying && !!activeTrack && (
+    activeTrack.release_id === release.id ||
+    tracks.some((t: any) => t.id === activeTrack.id || t.title === activeTrack.title)
+  );
   const isMultiTrack = release.release_type === 'album' || release.release_type === 'ep'
 
   const [isMounted, setIsMounted] = useState(false);
@@ -407,7 +410,7 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
                     {!release.release_type && t.single}
                   </span>
 
-                  <h1 className="font-black tracking-tighter text-white uppercase leading-[0.9] mb-3 break-words w-full" style={{ fontSize: release.title.length > 8 ? `clamp(20px, ${60 - (release.title.length - 8) * 4}px, 60px)` : '60px' }}>
+                  <h1 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tighter text-white uppercase leading-none mb-3 break-words w-full">
                     {release.title}
                   </h1>
 
@@ -501,12 +504,9 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
                 {tracks.map((track: any, i: number) => {
                   const isCurrentTrack = !!(
                     activeTrack && (
-                      // 1. Стандартное совпадение по ID трека (для альбомов)
                       activeTrack.id === track.id ||
-                      // 2. Если играет сингл, запущенный с главной (сверяем ID релиза с release_id трека)
-                      activeTrack.id === track.release_id ||
-                      // 3. Железный фикс по названию трека (если имена совпадают — это он)
-                      activeTrack.title === track.title
+                      (activeTrack.release_id && activeTrack.release_id === release.id && activeTrack.title === track.title) ||
+                      (activeTrack.title === track.title && activeTrack.release_title === release.title)
                     )
                   );
                   const isNowPlaying = isCurrentTrack && isPlaying
