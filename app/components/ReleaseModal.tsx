@@ -154,7 +154,6 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
   const [isLightboxOpen, setIsLightboxOpen] = useState(false)
   const [detectedGlow, setDetectedGlow] = useState('rgba(255,255,255,0.12)')
 
-  // Безопасный парсинг артистов трека или релиза
   const parseCollaborators = (target: any): string[] => {
     const mainArtist = 'NORDOSIK';
     if (!target) return [mainArtist];
@@ -164,18 +163,18 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
         .split(',')
         .map((c: string) => c.trim())
         .filter((c: string) => c.length > 0);
-      return [mainArtist, ...list];
+      return Array.from(new Set([mainArtist, ...list]));
     }
 
     if (Array.isArray(target.track_collaborators) && target.track_collaborators.length > 0) {
       const list = target.track_collaborators
         .map((item: any) => item.artist_name || item.name)
         .filter(Boolean);
-      return [mainArtist, ...list];
+      return Array.from(new Set([mainArtist, ...list]));
     }
 
     if (Array.isArray(target.collaborators) && target.collaborators.length > 0) {
-      return [mainArtist, ...target.collaborators.filter(Boolean)];
+      return Array.from(new Set([mainArtist, ...target.collaborators.filter(Boolean)]));
     }
 
     return [mainArtist];
@@ -191,31 +190,28 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
 
   useEffect(() => {
     if (release) {
+      setCommentaryText(release.commentary || '');
+      setIsDownloadOpen(false);
+      setIsCommentaryOpen(false);
+      setIsLightboxOpen(false);
+    }
+  }, [release?.id]);
+
+  useEffect(() => {
+    if (release) {
       setCommentaryText(release.commentary || '')
     }
   }, [release]);
 
   useEffect(() => {
-    let scrollTimeout: NodeJS.Timeout;
     if (isOpen) {
       window.dispatchEvent(new CustomEvent('toggle-player', { detail: true }));
     } else {
       window.dispatchEvent(new CustomEvent('toggle-player', { detail: false }));
-      const savedScroll = parseInt(document.body.getAttribute('data-scroll-y') || '0', 10);
-      if (savedScroll > 0) {
-        scrollTimeout = setTimeout(() => {
-          window.scrollTo({
-            top: savedScroll,
-            behavior: 'auto'
-          });
-        }, 0);
-      }
     }
 
-    // Находим внешнюю обертку модалки по ID
     const outerModal = document.getElementById('n-musics-modal-scroll-container');
     if (outerModal) {
-      // Если открыто окно загрузки или истории — намертво отключаем скролл длинной карточки сзади
       if (isDownloadOpen || isCommentaryOpen) {
         outerModal.style.overflowY = 'hidden';
       } else {
@@ -225,9 +221,30 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
 
     return () => {
       window.dispatchEvent(new CustomEvent('toggle-player', { detail: false }));
-      document.documentElement.style.overflow = '';
+    };
+  }, [isOpen, isDownloadOpen, isCommentaryOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      window.dispatchEvent(new CustomEvent('toggle-player', { detail: true }));
+    } else {
       document.body.style.overflow = '';
-      if (scrollTimeout) clearTimeout(scrollTimeout); // Железная зачистка таймера
+      window.dispatchEvent(new CustomEvent('toggle-player', { detail: false }));
+    }
+
+    const outerModal = document.getElementById('n-musics-modal-scroll-container');
+    if (outerModal) {
+      if (isDownloadOpen || isCommentaryOpen) {
+        outerModal.style.overflowY = 'hidden';
+      } else {
+        outerModal.style.overflowY = 'auto';
+      }
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+      window.dispatchEvent(new CustomEvent('toggle-player', { detail: false }));
     };
   }, [isOpen, isDownloadOpen, isCommentaryOpen]);
 
@@ -236,29 +253,32 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
 
   // Если треки переданы внутри объекта release_tracks (через новую промежуточную таблицу)
   const tracks = (
-    Array.isArray(release.release_tracks) && release.release_tracks.length > 0
-      ? release.release_tracks
-        .sort((a: any, b: any) => (a.track_number || 0) - (b.track_number || 0))
+    Array.isArray(release?.release_tracks) && release.release_tracks.length > 0
+      ? [...release.release_tracks]
+        .sort((a: any, b: any) => (a.track_number || a.position || 0) - (b.track_number || b.position || 0))
         .map((item: any) => {
-          // Если данные трека внутри объекта item.tracks
           const trackData = item.tracks || item;
           return {
             ...trackData,
-            // Если lyrics лежат в самой связи или внутри объекта tracks
             lyrics: trackData.lyrics || item.lyrics || '',
+            // Гарантируем, что хоть одно из полей ссылок будет заполнено
+            audio_url: trackData.audio_url || trackData.song_path || trackData.file_url || release?.audio_url || '',
+            song_path: trackData.song_path || trackData.audio_url || trackData.file_url || ''
           };
         })
         .filter(Boolean)
-      : (rawTracks || [])
+      : (rawTracks || release?.tracks || [])
   ).map((track: any) => ({
     ...track,
-    cover_url: track.cover_url || release.cover_url || release.cover,
+    cover_url: track.cover_url || release?.cover_url || release?.cover,
     lyrics: track.lyrics || '',
-    release_title: release.title
+    release_title: release?.title,
+    audio_url: track.audio_url || track.song_path || track.file_url || release?.audio_url || '',
+    song_path: track.song_path || track.audio_url || track.file_url || ''
   }));
 
   const formatDuration = (s: any) => {
-    const seconds = Math.floor(Number(s))
+    const seconds = Math.round(Number(s)) // Жесткое округление до ближайшего целого
     if (isNaN(seconds) || seconds <= 0) return '--:--'
     return `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`
   }
@@ -308,7 +328,7 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
     activeTrack.release_id === release.id ||
     tracks.some((t: any) => t.id === activeTrack.id || t.title === activeTrack.title)
   );
-  const isMultiTrack = release.release_type === 'album' || release.release_type === 'ep'
+  const isMultiTrack = tracks.length > 1 || release.release_type === 'album' || release.release_type === 'ep';
 
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => {
@@ -480,10 +500,10 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
                     <ActionButtons
                       handleShare={handleShare}
                       copied={copied}
-                      isMultiTrack={isMultiTrack}
+                      isMultiTrack={isMultiTrack} // Теперь здесь true для любых релизов, где > 1 трека
                       isDownloadOpen={isDownloadOpen}
                       setIsDownloadOpen={setIsDownloadOpen}
-                      audioUrl={release.audio_url}
+                      audioUrl={tracks[0]?.song_path || tracks[0]?.audio_url || release.audio_url} // Для 1-трекового сингла берём ссылку прямо из первого трека
                       title={release.title}
                       t={t}
                     />
@@ -519,7 +539,7 @@ export default function ReleaseModal({ release, isOpen, onClose, tracks: rawTrac
                       onClick={() => {
                         setQueue(tracks, i);
                         setIsPlaying(true);
-                        window.dispatchEvent(new CustomEvent('toggle-player', { detail: false })); // Исправили CustomeEvent -> CustomEvent
+                        window.dispatchEvent(new CustomEvent('toggle-player', { detail: false }));
                         onClose();
                       }}
                       className={`flex items-center justify-between gap-4 p-3 group
@@ -615,7 +635,11 @@ border ${isNowPlaying
 
                         {/* ДЛИТЕЛЬНОСТЬ ТРЕКА */}
                         <span className={`text-xs font-mono w-11 text-right transition-colors ${isCurrentTrack ? 'text-white' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
-                          {formatDuration(track.duration)}
+                          {formatDuration(
+                            isCurrentTrack && activeTrack?.duration
+                              ? activeTrack.duration
+                              : track.duration
+                          )}
                         </span>
 
                       </div>
@@ -670,18 +694,22 @@ border ${isNowPlaying
                             for (let index = 0; index < tracks.length; index++) {
                               const track = tracks[index];
                               try {
-                                const fileUrl = track.song_path || track.audio_url;
-                                if (!fileUrl) continue;
+                                // Проверяем все возможные наименования полей ссылки на аудиофайл
+                                const fileUrl = track.song_path || track.audio_url || track.file_url || track.url;
 
-                                // 1. Выкачиваем аудиофайл в память браузера
+                                if (!fileUrl) {
+                                  console.warn(`Пропущен трек "${track.title}": нет ссылки на файл`);
+                                  continue;
+                                }
+
+                                // Скачиваем аудиофайл
                                 const response = await fetch(fileUrl);
-                                const blob = await response.blob();
+                                if (!response.ok) throw new Error(`Ошибка загрузки: ${response.statusText}`);
 
-                                // Форматируем номер трека (01, 02, 03...10), чтобы папка сохраняла строгий порядок треклиста
+                                const blob = await response.blob();
                                 const trackNumber = String(index + 1).padStart(2, '0');
                                 const fileName = `${trackNumber}. ${track.title}.mp3`;
 
-                                // 2. Кладем файл в нашу виртуальную папку архива
                                 albumFolder.file(fileName, blob);
                               } catch (err) {
                                 console.error(`Ошибка при архивации трека ${track.title}:`, err);
@@ -720,7 +748,8 @@ border ${isNowPlaying
                               <div className="flex items-center gap-x-6 min-w-0">
                                 <span className="text-[12px] font-black text-zinc-700 w-6 text-left group-hover:text-zinc-400">{i + 1}</span>
                                 <div className="flex flex-col truncate">
-                                  <span className="font-bold text-[15px] text-zinc-200 group-hover:text-white truncate uppercase tracking-tight">
+                                  {/* Убрали uppercase */}
+                                  <span className="font-bold text-[15px] text-zinc-200 group-hover:text-white truncate tracking-tight">
                                     {track.title}
                                   </span>
                                   <span className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.2em] mt-0.5 truncate">

@@ -109,13 +109,25 @@ export default function TopPanel() {
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.97, opacity: 0, y: 10 }}
         transition={{ type: "spring", stiffness: 450, damping: 28 }}
-        className="bg-[#09090b] border border-white/10 rounded-xl p-8 md:p-10 max-w-xl w-full relative shadow-[0_30px_70px_rgba(0,0,0,0.9)] font-mono text-center z-10"
+        className="bg-[#09090b] border border-white/10 rounded-xl p-8 md:p-10 max-w-xl w-full relative shadow-[0_30px_70px_rgba(0,0,0,0.9)] font-mono text-center z-10 overflow-hidden"
       >
-        <button onClick={onClose} className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors">
-          <X size={22} strokeWidth={1.5} />
-        </button>
-        <span className="text-[10px] text-zinc-500 uppercase tracking-[0.4em] mb-4 block">{t.overlaySub}</span>
-        <h3 className="text-xl md:text-2xl font-black uppercase text-white tracking-tighter mb-6">{title}</h3>
+        {/* Наш упругий брутальный крестик */}
+        <motion.button
+          onClick={onClose}
+          whileHover={{ scale: 1.15, rotate: 90, color: "#ef4444" }}
+          whileTap={{ scale: 0.85 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          className="absolute top-5 right-5 text-zinc-500 transition-colors text-4xl font-mono select-none cursor-pointer leading-none z-20"
+        >
+          ×
+        </motion.button>
+
+        <span className="text-[10px] text-zinc-500 uppercase tracking-[0.4em] mb-4 block">
+          {t.overlaySub}
+        </span>
+        <h3 className="text-xl md:text-2xl font-black uppercase text-white tracking-tighter mb-6 pr-6">
+          {title}
+        </h3>
         <div className="w-full">{children}</div>
       </motion.div>
     </div>

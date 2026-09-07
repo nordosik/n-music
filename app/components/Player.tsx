@@ -17,7 +17,7 @@ export default function Player() {
   const playPrevious = usePlayer(state => state.playPrevious);
   const queue = usePlayer(state => state.queue);
   const currentIndex = usePlayer(state => state.currentIndex);
-  
+
   const isLyricsOpen = usePlayer(state => state.isLyricsOpen);
   const setIsLyricsOpen = usePlayer(state => state.setIsLyricsOpen);
   const isShuffle = usePlayer(state => state.isShuffle);
@@ -29,10 +29,10 @@ export default function Player() {
   const toggleMute = usePlayer(state => state.toggleMute);
   const language = usePlayer(state => state.language);
   const setLanguage = usePlayer(state => state.setLanguage);
-  
+
   const setGlobalCurrentTime = usePlayer(state => state.setCurrentTime);
   const audioRef = useRef<HTMLAudioElement>(null)
-  
+
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [detectedGlow, setDetectedGlow] = useState('rgba(255,255,255,0.12)')
@@ -169,7 +169,6 @@ export default function Player() {
       }
       setGlobalCurrentTime(time);
 
-      // БЕСШОВНЫЙ ПЕРЕХОД: если до конца осталось меньше 0.15 сек и режим не "повтор 1 трека"
       if (realDuration > 0 && realDuration - time <= 0.15 && repeatMode !== 'one' && isPlaying) {
         playNext(true);
       }
@@ -214,7 +213,7 @@ export default function Player() {
 
   return (
     <div className={`fixed bottom-0 left-0 right-0 h-24 px-6 flex items-center justify-between z-40 transition-all duration-500 ease-in-out overflow-visible bg-zinc-950/80 backdrop-blur-2xl backdrop-saturate-150 border-t border-white/10 shadow-[0_-15px_40px_rgba(0,0,0,0.6)] ${isForcedHidden ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
-      
+
       {/* Скрытый тег для моментальной предзагрузки следующей песни */}
       {nextTrack?.audio_url && (
         <audio src={nextTrack.audio_url} preload="auto" className="hidden" />

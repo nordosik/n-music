@@ -1,4 +1,5 @@
 'use client'
+
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import SearchTrackRow from './SearchTrackRow'
@@ -7,8 +8,8 @@ import { usePlayer } from '../lib/usePlayer'
 import { locales } from '../lib/locales'
 
 interface SmartSearchProps {
-    externalQuery: string;
-    onReleaseClick: (release: any) => void; // <--- ДОБАВИЛИ ТИП ФУНКЦИИ КЛИКА
+    externalQuery: string
+    onReleaseClick: (release: any) => void
 }
 
 export default function SmartSearch({ externalQuery, onReleaseClick }: SmartSearchProps) {
@@ -16,13 +17,12 @@ export default function SmartSearch({ externalQuery, onReleaseClick }: SmartSear
     const [releases, setReleases] = useState<any[]>([])
     const [isLoading, setIsLoading] = useState(false)
 
-    const activeTrack = usePlayer(state => state.activeTrack);
-    const isPlaying = usePlayer(state => state.isPlaying);
-    const setQueue = usePlayer(state => state.setQueue);
-    const setIsPlaying = usePlayer(state => state.setIsPlaying);
-    const language = usePlayer(state => state.language);
-
-    const t = locales[language as 'ru' | 'en' || 'en'];
+    const activeTrack = usePlayer((state) => state.activeTrack)
+    const isPlaying = usePlayer((state) => state.isPlaying)
+    const setQueue = usePlayer((state) => state.setQueue)
+    const setIsPlaying = usePlayer((state) => state.setIsPlaying)
+    const language = usePlayer((state) => state.language)
+    const t = locales[language as 'ru' | 'en'] || locales.ru
 
     useEffect(() => {
         const fetchResults = async () => {
@@ -33,41 +33,40 @@ export default function SmartSearch({ externalQuery, onReleaseClick }: SmartSear
             }
 
             setIsLoading(true)
-            const cleanQuery = externalQuery.trim();
+            const cleanQuery = externalQuery.trim()
 
             try {
-                // 1. Возвращаем простой и стабильный запрос треков без сложных связей
+                // 1. Запрашиваем ТОЛЬКО существующие колонки у релизов
+                const { data: allReleases } = await supabase
+                    .from('releases')
+                    .select('id, title, cover_url')
+
+                // 2. Ищем треки
                 const { data: trackData } = await supabase
                     .from('tracks')
                     .select('*')
                     .ilike('title', `${cleanQuery}%`)
                     .limit(10)
 
-                // 2. Обычный запрос релизов
+                // 3. Ищем релизы
                 const { data: releaseData } = await supabase
                     .from('releases')
                     .select('*')
                     .ilike('title', `${cleanQuery}%`)
                     .limit(6)
 
-                // 3. УМНАЯ СКЛЕЙКА ОБЛОЖЕК:
-                // Вытягиваем вообще все релизы, чтобы сопоставить обложки для найденных треков
-                const { data: allReleases } = await supabase
-                    .from('releases')
-                    .select('title, cover_url');
+                // 4. Привязываем обложку к треку из родительского релиза по release_id
+                const formattedTracks =
+                    trackData?.map((track: any) => {
+                        const matchedRelease = allReleases?.find(
+                            (r) => Number(r.id) === Number(track.release_id)
+                        )
 
-                const formattedTracks = trackData?.map((track: any) => {
-                    // Ищем обложку: либо по release_id (для альбомов), либо по названию трека (для синглов)
-                    const matchedRelease = allReleases?.find(
-                        (r) => r.title === track.release_id || r.title === track.title
-                    );
-
-                    return {
-                        ...track,
-                        // Если нашли обложку в релизах — вшиваем её, иначе оставляем что было
-                        cover_url: matchedRelease?.cover_url || track.cover_url || null
-                    };
-                }) || [];
+                        return {
+                            ...track,
+                            cover_url: matchedRelease?.cover_url || null,
+                        }
+                    }) || []
 
                 setTracks(formattedTracks)
                 setReleases(releaseData || [])
@@ -100,10 +99,11 @@ export default function SmartSearch({ externalQuery, onReleaseClick }: SmartSear
             )}
 
             <div className="space-y-12">
-                {/* СЕКЦИЯ 1: ТРЕКИ (В ДВЕ КОЛОНКИ) */}
                 {tracks.length > 0 && (
                     <div>
-                        <h3 className="text-xs font-black text-zinc-500 uppercase tracking-[0.3em] mb-6">{t.foundTracks}</h3>
+                        <h3 className="text-xs font-black text-zinc-500 uppercase tracking-[0.3em] mb-6">
+                            {t.foundTracks}
+                        </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {tracks.map((track) => (
                                 <SearchTrackRow key={track.id} track={track} allTracks={tracks} />
@@ -112,42 +112,66 @@ export default function SmartSearch({ externalQuery, onReleaseClick }: SmartSear
                     </div>
                 )}
 
-                {/* СЕКЦИЯ 2: РЕЛИЗЫ (ТЕПЕРЬ С АКТИВНОЙ ПОДСВЕТКОЙ) */}
                 {releases.length > 0 && (
                     <div>
-                        <h3 className="text-xs font-black text-zinc-500 uppercase tracking-[0.3em] mb-6">{t.foundReleases}</h3>
+                        <h3 className="text-xs font-black text-zinc-500 uppercase tracking-[0.3em] mb-6">
+                            {t.foundReleases}
+                        </h3>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
                             {releases.map((release) => {
-                                // Проверяем, играет ли сейчас трек из этого релиза
-                                // (сверяем по полю release_id трека и названию релиза)
-                                const isCurrentRelease = (activeTrack?.release_id === release.title || activeTrack?.title === release.title) && isPlaying;
+                                const coverUrl = release.cover_url || release.image_url
 
-                                // Функция быстрого старта музыки для поиска
+                                const isCurrentRelease =
+                                    isPlaying &&
+                                    activeTrack &&
+                                    (String(activeTrack.release_id) === String(release.id) ||
+                                        activeTrack.release_id === release.title ||
+                                        activeTrack.title === release.title)
+
                                 const handleQuickPlay = async (e: React.MouseEvent) => {
-                                    e.stopPropagation();
+                                    e.stopPropagation()
 
-                                    // Если этот релиз уже загружен в плеер — мгновенно переключаем Play/Pause БЕЗ запросов к базе
-                                    if (activeTrack && (activeTrack.id === release.id || activeTrack.release_id === release.title || activeTrack.title === release.title)) {
-                                        setIsPlaying(!isPlaying);
-                                        return;
+                                    if (isCurrentRelease) {
+                                        setIsPlaying(!isPlaying)
+                                        return
                                     }
 
-                                    // Запрос в Supabase отправляется ТОЛЬКО если включается абсолютно новый релиз
-                                    const { data: releaseTracks } = await supabase
+                                    // 1. Проверяем напрямую по tracks
+                                    let { data: releaseTracks } = await supabase
                                         .from('tracks')
                                         .select('*')
-                                        .eq('release_id', release.title)
-                                        .order('position', { ascending: true });
+                                        .or(`release_id.eq.${release.id},release_id.eq."${release.title}"`)
+                                        .order('position', { ascending: true })
+
+                                    // 2. Если пустая выборка — смотрим через release_tracks
+                                    if (!releaseTracks || releaseTracks.length === 0) {
+                                        const { data: relLinks } = await supabase
+                                            .from('release_tracks')
+                                            .select('track_id')
+                                            .eq('release_id', release.id)
+
+                                        if (relLinks && relLinks.length > 0) {
+                                            const trackIds = relLinks.map((l) => l.track_id)
+                                            const { data: linkedTracks } = await supabase
+                                                .from('tracks')
+                                                .select('*')
+                                                .in('id', trackIds)
+                                            releaseTracks = linkedTracks
+                                        }
+                                    }
 
                                     if (releaseTracks && releaseTracks.length > 0) {
-                                        const tracksWithCover = releaseTracks.map(t => ({ ...t, cover_url: release.cover_url }));
-                                        setQueue(tracksWithCover, 0);
-                                        setIsPlaying(true);
+                                        const prepared = releaseTracks.map((t) => ({
+                                            ...t,
+                                            cover_url: t.cover_url || t.image_url || coverUrl,
+                                        }))
+                                        setQueue(prepared, 0)
+                                        setIsPlaying(true)
                                     } else {
-                                        setQueue([release], 0);
-                                        setIsPlaying(true);
+                                        setQueue([{ ...release, cover_url: coverUrl }], 0)
+                                        setIsPlaying(true)
                                     }
-                                };
+                                }
 
                                 const isEcosystem = release.is_ecosystem
                                 const isHot = release.is_hot
@@ -155,8 +179,38 @@ export default function SmartSearch({ externalQuery, onReleaseClick }: SmartSear
                                 return (
                                     <div
                                         key={release.id}
-                                        onClick={() => onReleaseClick(release)}
-                                        /* СУРОВЫЙ КИБЕРПАНК: Подсветка карточек в поиске в тон маркерам */
+                                        onClick={async () => {
+                                            // Ищем треки строго по числовому id релиза или через промежуточную таблицу связей
+                                            let { data: fetchedTracks } = await supabase
+                                                .from('tracks')
+                                                .select('*')
+                                                .eq('release_id', release.id)
+                                                .order('position', { ascending: true })
+
+                                            // Если напрямую по release_id не нашли, ищем через связующую таблицу release_tracks
+                                            if (!fetchedTracks || fetchedTracks.length === 0) {
+                                                const { data: relLinks } = await supabase
+                                                    .from('release_tracks')
+                                                    .select('track_id')
+                                                    .eq('release_id', release.id)
+
+                                                if (relLinks && relLinks.length > 0) {
+                                                    const trackIds = relLinks.map((l) => l.track_id)
+                                                    const { data: linkedTracks } = await supabase
+                                                        .from('tracks')
+                                                        .select('*')
+                                                        .in('id', trackIds)
+                                                        .order('position', { ascending: true })
+
+                                                    fetchedTracks = linkedTracks
+                                                }
+                                            }
+
+                                            onReleaseClick({
+                                                ...release,
+                                                tracks: fetchedTracks && fetchedTracks.length > 0 ? fetchedTracks : release.tracks || []
+                                            })
+                                        }}
                                         className={`p-4 rounded-xl cursor-pointer transition-all duration-500 group border flex flex-col h-full ${isCurrentRelease
                                             ? isEcosystem
                                                 ? 'bg-emerald-950/20 border-emerald-400 text-white shadow-[0_0_25px_rgba(52,211,153,0.35),inset_0_0_15px_rgba(52,211,153,0.15)] scale-[1.02]'
@@ -166,49 +220,54 @@ export default function SmartSearch({ externalQuery, onReleaseClick }: SmartSear
                                             : isEcosystem
                                                 ? 'bg-zinc-900/30 border-emerald-500/20 text-zinc-400 hover:border-emerald-400 hover:shadow-[0_0_20px_rgba(52,211,153,0.2)] hover:text-white'
                                                 : isHot
-                                                    ? 'bg-zinc-900/30 border-red-500/20 animate-fire-glow text-zinc-400 hover:border-red-400 hover:text-white'
+                                                    ? 'bg-zinc-900/30 border-red-500/20 text-zinc-400 hover:border-red-400 hover:text-white'
                                                     : 'bg-zinc-900/30 border-zinc-800/80 text-zinc-400 hover:bg-zinc-800/30 hover:border-zinc-700 hover:text-white'
                                             }`}
                                     >
                                         <div className="aspect-square bg-zinc-800 rounded-lg overflow-hidden relative shadow-md mb-4 flex items-center justify-center">
-                                            {release.cover_url ? (
+                                            {coverUrl ? (
                                                 <img
-                                                    src={release.cover_url}
+                                                    src={coverUrl}
                                                     alt={release.title}
-                                                    className={`w-full h-full object-cover transition-transform duration-500 ${isCurrentRelease ? 'scale-105' : 'group-hover:scale-105'} transform-gpu will-change-transform`}
-                                                    style={{
-                                                        imageRendering: 'auto',
-                                                        backfaceVisibility: 'hidden',
-                                                        WebkitBackfaceVisibility: 'hidden'
-                                                    }}
+                                                    className={`w-full h-full object-cover transition-transform duration-500 transform-gpu will-change-transform ${isCurrentRelease ? 'scale-105' : 'group-hover:scale-105'
+                                                        }`}
                                                 />
                                             ) : (
                                                 <Music className="text-zinc-600" size={32} />
                                             )}
 
-                                            {/* ЖИВАЯ КНОПКА PLAY/PAUSE В ПОИСКЕ */}
                                             <button
                                                 onClick={handleQuickPlay}
-                                                className={`absolute bottom-3 right-3 transition-all duration-300 drop-shadow-2xl z-30 flex items-center justify-center p-2.5 bg-white text-black rounded-full hover:scale-110 active:scale-95 shadow-[0_8px_24px_rgba(0,0,0,0.5)] ${isCurrentRelease ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0'
+                                                className={`absolute bottom-3 right-3 transition-all duration-300 drop-shadow-2xl z-30 flex items-center justify-center p-2.5 bg-white text-black rounded-full hover:scale-110 active:scale-95 shadow-[0_8px_24px_rgba(0,0,0,0.5)] ${isCurrentRelease
+                                                    ? 'opacity-100 translate-y-0 scale-100'
+                                                    : 'opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0'
                                                     }`}
                                             >
-                                                {isCurrentRelease ? <Pause fill="black" size={16} /> : <Play fill="black" size={16} className="ml-0.5" />}
+                                                {isCurrentRelease && isPlaying ? (
+                                                    <Pause fill="black" size={16} />
+                                                ) : (
+                                                    <Play fill="black" size={16} className="ml-0.5" />
+                                                )}
                                             </button>
                                         </div>
 
-                                        <h4 className={`text-xs font-black uppercase tracking-wide truncate ${isCurrentRelease ? 'text-white' : 'text-zinc-300 group-hover:text-white'}`}>
+                                        {/* Перенос названия до 3 строк без срезки и с сохранением исходного регистра */}
+                                        <h4
+                                            className={`text-xs font-bold leading-snug line-clamp-3 break-words whitespace-normal transition-colors duration-300 ${isCurrentRelease ? 'text-white' : 'text-zinc-300 group-hover:text-white'
+                                                }`}
+                                        >
                                             {release.title}
                                         </h4>
 
-                                        {/* ПОДВАЛ КАРТОЧКИ С ГЕОМЕТРИЧЕСКИМИ ТЕГАМИ */}
-                                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                                        <div className="flex flex-wrap items-center gap-2 mt-auto pt-2">
                                             <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">
                                                 {release.release_type === 'album' && t.album}
                                                 {release.release_type === 'ep' && t.ep}
                                                 {(release.release_type === 'single' || !release.release_type) && t.single}
-                                                {release.created_at ? ` • ${new Date(release.created_at).getFullYear()}` : ''}
+                                                {release.created_at
+                                                    ? ` • ${new Date(release.created_at).getFullYear()}`
+                                                    : ''}
                                             </p>
-
                                             {isEcosystem && (
                                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_12px_#34d399,0_0_4px_#34d399]" />
                                             )}
@@ -219,7 +278,7 @@ export default function SmartSearch({ externalQuery, onReleaseClick }: SmartSear
                                             )}
                                         </div>
                                     </div>
-                                );
+                                )
                             })}
                         </div>
                     </div>

@@ -1,24 +1,36 @@
 import { create } from 'zustand'
-import { supabase } from './supabase' // Импорт инициализированного клиента
+import { supabase } from './supabase'
 
 export type RepeatMode = 'off' | 'one' | 'all';
 
+export interface UserProfile {
+  id: string
+  email?: string
+  username?: string
+  avatar_url?: string
+}
+
 interface Track {
-  id: string | number;
-  title: string;
-  audio_url: string;
-  cover_url?: string;
-  release_type?: 'single' | 'ep' | 'album';
-  release_id?: string;
-  duration: number;
-  lyrics?: string;
-  is_ecosystem?: boolean;
-  is_hot?: boolean;
-  plays_count?: number;
-  release_title?: string;
+  id: string | number
+  title: string
+  audio_url: string
+  cover_url?: string
+  release_type?: 'single' | 'ep' | 'album'
+  release_id?: string
+  duration: number
+  lyrics?: string
+  is_ecosystem?: boolean
+  is_hot?: boolean
+  plays_count?: number
+  release_title?: string
 }
 
 interface PlayerStore {
+  // === СЕКЦИЯ ПОЛЬЗОВАТЕЛЯ И АВТОРИЗАЦИИ ===
+  user: UserProfile | null
+  setUser: (user: UserProfile | null) => void
+  logout: () => void
+
   activeTrack: Track | null
   isPlaying: boolean
   queue: Track[]
@@ -49,6 +61,7 @@ interface PlayerStore {
   toggleRepeat: () => void
   toggleShuffle: () => void
   toggleLanguage: () => void
+
   // === Управление глобальной модалкой артистов ===
   isArtistModalOpen: boolean
   activeArtistName: string | null
@@ -69,36 +82,27 @@ const shuffleArray = (array: Track[], excludeTrackId: string | number): Track[] 
   return filtered;
 };
 
-// Функция запуска таймера прослушивания на чистом клиенте
 const startListenTimer = (set: any, get: any, track: Track) => {
   const currentTimeout = get().listenTimeoutId;
   if (currentTimeout) clearTimeout(currentTimeout);
 
-  // Игнорируем мои стримы, пока я разрабатываю на localhost
   if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
     console.log(`[Analytics] Локальный запуск. Стрим трека "${track.title}" проигнорирован.`);
     return;
   }
 
-  // Считаем стрим, если играет дольше 30 сек (или меньше, если трек короткий)
   const threshold = Math.min(30, track.duration || 30) * 1000;
-
   const timeoutId = setTimeout(async () => {
     try {
-      // Передаем ID как есть (в виде строки/UUID)
       const trackId = track.id;
-
       console.log(`[Analytics] Отправка стрима для UUID: ${trackId}...`);
-
       const { error } = await supabase.rpc('increment_track_plays', {
         target_track_id: trackId
       });
-
       if (error) {
         console.error('[Analytics Error] Supabase вернул ошибку:', error.message);
         return;
       }
-
       console.log(`[Analytics] Стрим успешно засчитан в базе для: ${track.title}`);
     } catch (error: any) {
       console.error('[Analytics Error] Критическая ошибка:', error?.message || error);
@@ -109,6 +113,14 @@ const startListenTimer = (set: any, get: any, track: Track) => {
 };
 
 export const usePlayer = create<PlayerStore>((set, get) => ({
+  // === СЕКЦИЯ ПОЛЬЗОВАТЕЛЯ ===
+  user: null,
+  setUser: (user) => set({ user }),
+  logout: () => {
+    supabase.auth.signOut();
+    set({ user: null });
+  },
+
   activeTrack: null,
   isPlaying: false,
   queue: [],
@@ -126,7 +138,6 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
 
   setIsLyricsOpen: (open) => set({ isLyricsOpen: open }),
   setCurrentTime: (time) => set({ currentTime: time }),
-
   setActiveTrack: (track: Track) => {
     set({
       activeTrack: track,
@@ -137,7 +148,6 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     });
     startListenTimer(set, get, track);
   },
-
   setVolume: (value) => set({ volume: value }),
   setPrevVolume: (value) => set({ prevVolume: value }),
   toggleMute: () => {
@@ -149,18 +159,15 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
       setVolume(prevVolume > 0 ? prevVolume : 1);
     }
   },
-
   setLyricsScrollPosition: (trackId, position) => set((state) => ({
     lyricsScrollPositions: {
       ...state.lyricsScrollPositions,
       [trackId]: position
     }
   })),
-
   setQueue: (tracks: Track[], index = 0) => {
     const { isShuffle } = get();
     const selectedTrack = tracks[index];
-
     if (isShuffle && tracks.length > 1) {
       const shuffledRemaining = shuffleArray(tracks, selectedTrack.id);
       set({
@@ -181,10 +188,8 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     }
     startListenTimer(set, get, selectedTrack);
   },
-
   playNext: (isAutoEnded = false) => {
     const { queue, originalQueue, activeTrack, currentIndex, repeatMode, isShuffle, stopListenTimer } = get();
-
     stopListenTimer();
 
     if (isAutoEnded && repeatMode === 'one') {
@@ -199,6 +204,7 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
       }, 30);
       return;
     }
+
     const isLastTrack = currentIndex === queue.length - 1;
     if (!isLastTrack) {
       const nextIndex = currentIndex + 1;
@@ -246,12 +252,9 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
       }
     }
   },
-
   playPrevious: () => {
     const { queue, currentIndex, stopListenTimer } = get();
-
     stopListenTimer();
-
     if (currentIndex > 0) {
       const nextIndex = currentIndex - 1;
       const prevTrack = queue[nextIndex];
@@ -270,7 +273,6 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
       }, 30);
     }
   },
-
   stopListenTimer: () => {
     const { listenTimeoutId } = get();
     if (listenTimeoutId) {
@@ -278,7 +280,6 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
       set({ listenTimeoutId: null });
     }
   },
-
   setIsPlaying: (playing) => {
     if (!playing) {
       get().stopListenTimer();
@@ -288,7 +289,6 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     }
     set({ isPlaying: playing });
   },
-
   togglePlay: () => set((state) => {
     const nextPlaying = !state.isPlaying;
     if (!nextPlaying) {
@@ -298,7 +298,6 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     }
     return { isPlaying: nextPlaying };
   }),
-
   toggleRepeat: () => set((state) => {
     const nextModes: Record<RepeatMode, RepeatMode> = { off: 'one', one: 'all', all: 'off' };
     const nextMode = nextModes[state.repeatMode];
@@ -314,7 +313,6 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     }
     return { repeatMode: nextMode };
   }),
-
   toggleShuffle: () => set((state) => {
     if (state.repeatMode === 'one') {
       return {};
@@ -346,7 +344,6 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
       };
     }
   }),
-
   toggleLanguage: () => set((state) => {
     const nextLang = state.language === 'en' ? 'ru' : 'en';
     if (typeof window !== 'undefined') {
@@ -354,17 +351,15 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     }
     return { language: nextLang };
   }),
-
   setLanguage: (lang) => set({ language: lang }),
 
-  // НОВАЯ ЛОГИКА ВЕРХНЕЙ ПАНЕЛИ
+  // ВЕРХНЯЯ ПАНЕЛЬ
   isTopPanelOpen: false,
   setIsTopPanelOpen: (open) => set({ isTopPanelOpen: open }),
 
-  // === Реализация глобального стора для модалки ===
+  // МОДАЛКА АРТИСТОВ
   isArtistModalOpen: false,
   activeArtistName: null,
   openArtistModal: (name: string) => set({ isArtistModalOpen: true, activeArtistName: name }),
-  closeArtistModal: () => set({ isArtistModalOpen: false, activeArtistName: null }),
+  closeArtistModal: () => set({ isArtistModalOpen: false, activeArtistName: null })
 }))
-

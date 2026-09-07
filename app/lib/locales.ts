@@ -1,11 +1,11 @@
-// 1. Сначала объявляем базовый словарь (русский). Он станет эталоном для типов.
+// 1. Базовый словарь (русский)
 const ruTranslations = {
   album: "Альбом",
   ep: "EP",
   single: "Сингл",
   filters: "ФИЛЬТРЫ",
   filterAll: "ВСЕ РЕЛИЗЫ",
-  filterType: "ТИП",
+  filterType: "Тип",
   filterTracks: "ТРЕКИ",
   filterDate: "ДАТА",
   filterDuration: "ДЛИТЕЛЬНОСТЬ",
@@ -109,7 +109,7 @@ const ruTranslations = {
   modalSocialsBody: "Официальные каналы и медиа-площадки. Нажмите для перехода или копирования контактов.",
   modalSupportTitle: "ПОДДЕРЖКА АРТИСТА",
   modalSupportBody: "Если вы хотите поддержать моё музло, можете нажать на иконку ниже и перевести любое количество средств.",
-  modalCollabTitle: "СОТРУДНИЧЕСТВО И СВЯЗЬ",
+  modalCollabTitle: "СОТРУДНИЧЕСТВО и связь",
   modalCollabBody: "Все предложения по платформе, коллаборациям, фитам и т.д. писать мне в контакты ниже. Нажмите на строку для копирования.",
   toastDiscordCopied: "ДИСКОРД НИК СКОПИРОВАН В БУФЕР ОБМЕНА",
   toastTelegramCopied: "КОНТАКТ ТГ СКОПИРОВАН В БУФЕР ОБМЕНА",
@@ -124,13 +124,13 @@ const ruTranslations = {
   artistModalNoLinks: "СОЦСЕТИ НЕ ДОБАВЛЕНЫ",
   artistModalGoTo: "ПЕРЕЙТИ",
   collaboratorsPlaceholder: "Коллабораторы (через запятую)...",
-  artistsTooltip: 'ИСПОЛНИТЕЛИ:',
+  artistsTooltip: "исполнители:",
 };
 
-// 2. Создаем строгий тип на основе структуры русского словаря
+// 2. Строгий тип на основе структуры русского словаря
 export type TranslationKeys = typeof ruTranslations;
 
-// 3. Вынуждаем английский словарь строго соответствовать структуре
+// 3. Английский словарь
 const enTranslations: TranslationKeys = {
   album: "Album",
   ep: "EP",
@@ -236,7 +236,7 @@ const enTranslations: TranslationKeys = {
   authRegisterBtn: "REGISTER",
   authLoginBtn: "LOGIN",
   modalAboutTitle: "ABOUT N.MUSICS PLATFORM",
-  modalAboutBody: "N.Musics is an individual project-platform founded by NORDOSIK - a YouTuber, critic, and lover of aggressive music. The foundation for creating music was the voice acting of various characters in Minecraft. Here you can get acquainted with my musical work in more detail and delve into the artist's development.",
+  modalAboutBody: "N.Musics is an individual project-platform founded by NORDOSIK a YouTuber, critic, and lover of aggressive music. The foundation for creating music was the voice acting of various characters in Minecraft. Here you can get acquainted with my musical work in more detail and delve into the artist's development.",
   modalSocialsTitle: "OUR RESOURCES",
   modalSocialsBody: "Official channels and media platforms. Click to visit or copy contacts.",
   modalSupportTitle: "SUPPORT THE ARTIST",
@@ -256,12 +256,12 @@ const enTranslations: TranslationKeys = {
   artistModalNoLinks: "NO LINKS ADDED",
   artistModalGoTo: "GO TO",
   collaboratorsPlaceholder: "Collaborators (comma separated)...",
-  artistsTooltip: 'ARTISTS:',
+  artistsTooltip: "ARTISTS:",
 };
 
 export type Language = 'ru' | 'en';
 
-// 4. Экспортируем объединенный объект локализации
+// 4. Объединенный объект локализации
 export const locales: Record<Language, TranslationKeys> = {
   ru: ruTranslations,
   en: enTranslations,

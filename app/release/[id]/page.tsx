@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { usePlayer } from '../../lib/usePlayer'
 import { Share2, Clock, Play, Pause, Music, X, Heart } from 'lucide-react'
 import { locales } from '../../lib/locales'
+import { motion } from 'framer-motion'
 
 function TruncatedArtists({
   collaboratorsStr,
@@ -241,12 +242,15 @@ export default function ReleasePage() {
   return (
     <main className="min-h-screen bg-[#0c0c0e] text-white p-8 md:p-24 overflow-y-auto relative">
       {!isLyricsOpen && (
-        <button
+        <motion.button
           onClick={() => router.push('/')}
-          className="fixed top-8 right-8 z-50 p-2 text-zinc-700 hover:text-white transition-colors"
+          whileHover={{ scale: 1.15, rotate: 90, color: "#ef4444" }}
+          whileTap={{ scale: 0.85 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          className="fixed top-8 right-8 z-50 text-zinc-500 transition-colors text-3xl font-mono select-none cursor-pointer leading-none p-2 flex items-center justify-center"
         >
-          <X size={32} strokeWidth={1.5} />
-        </button>
+          ×
+        </motion.button>
       )}
 
       <div className="flex flex-col lg:flex-row min-h-screen w-full relative">
@@ -254,10 +258,10 @@ export default function ReleasePage() {
         <div className="w-full lg:w-[400px] lg:fixed lg:top-0 lg:left-0 lg:bottom-0 p-12 flex flex-col justify-start z-20 bg-[#050505] md:bg-transparent">
           <div className="relative w-64 h-64 mb-8 shrink-0 mt-4 group">
             <div
-              className="absolute -inset-1 bg-cover bg-center blur-xl opacity-0 group-hover:opacity-35 transition-all duration-500 transform-gpu pointer-events-none rounded-2xl brightness-75 contrast-125"
+              className="absolute -inset-1 bg-cover bg-center blur-lg opacity-0 group-hover:opacity-30 transition-opacity duration-500 pointer-events-none rounded-2xl"
               style={{ backgroundImage: `url(${release.cover_url})` }}
             />
-            <div className="relative z-10 w-full h-full rounded-2xl overflow-hidden transform-gpu transition-all duration-500 ease-out group-hover:-translate-y-2 group-hover:scale-[1.01] shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
+            <div className="relative z-10 w-full h-full rounded-2xl overflow-hidden transition-transform duration-500 ease-out group-hover:-translate-y-2 shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
               <img src={release.cover_url} className="w-full h-full object-cover" alt={release.title} />
             </div>
           </div>
@@ -269,7 +273,7 @@ export default function ReleasePage() {
               {release.release_type === 'single' && $t.single}
               {!release.release_type && $t.single}
             </span>
-            <h1 className="text-4xl font-black tracking-tighter uppercase leading-none mb-2">
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight leading-tight mb-2">
               {release.title}
             </h1>
             <div className="text-sm font-bold tracking-wide mb-4">
@@ -372,7 +376,7 @@ export default function ReleasePage() {
                       </span>
 
                       <div className="flex flex-col min-w-0 flex-1 justify-center">
-                        <span className={`text-sm font-black uppercase tracking-wide break-words whitespace-normal transition-colors duration-300 ${isCurrent ? 'text-white' : 'text-zinc-400 group-hover:text-white'
+                        <span className={`text-sm font-black tracking-wide break-words whitespace-normal transition-colors duration-300 ${isCurrent ? 'text-white' : 'text-zinc-400 group-hover:text-white'
                           }`}>
                           {track.title}
                         </span>

@@ -1,5 +1,4 @@
 'use client'
-
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { usePlayer } from '../lib/usePlayer'
@@ -33,22 +32,17 @@ export default function ArtistModal() {
     const fetchArtistLinks = async () => {
       setLoading(true)
       setLinks(null)
-
       const cleanName = activeArtistName.trim();
-      console.log("УЛЬТИМАТИВНЫЙ ПОИСК ПО БАЗЕ ДАННЫХ ДЛЯ ->", `"${cleanName}"`);
 
-      // Пуленепробиваемый поиск через .ilike без чувствительности к регистру и мелким опечаткам
       const { data, error } = await supabase
         .from('artists')
         .select('vk_url, tg_url, spotify_url')
-        .ilike('name', `%${cleanName}%`) // Проценты спасают от скрытых символов и разности раскладок
+        .ilike('name', `%${cleanName}%`)
         .maybeSingle()
 
       if (error) {
         console.error("ОШИБКА БАЗЫ ДАННЫХ SUPABASE:", error)
       }
-
-      console.log("РЕАЛЬНЫЙ ОТВЕТ ОТ ТАБЛИЦЫ ARTISTS:", data);
 
       if (data) {
         setLinks({
@@ -78,7 +72,7 @@ export default function ArtistModal() {
             className="absolute inset-0 bg-black/80 backdrop-blur-xl cursor-pointer"
           />
 
-          {/* КАРТОЧКА МОДАЛКИ: Добавил упругий, сочный влет (Spring) */}
+          {/* КАРТОЧКА МОДАЛКИ */}
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -91,23 +85,23 @@ export default function ArtistModal() {
             }}
             className="relative w-full max-w-md bg-zinc-950 border border-white/10 p-8 rounded-2xl shadow-2xl flex flex-col justify-between overflow-hidden z-10 font-mono"
           >
-            {/* Кнопка закрытия крестиком: При наведении плавно поворачивается на 90 градусов и увеличивается, при клике сжимается */}
+            {/* ТВОЙ УПРУГИЙ БРУТАЛЬНЫЙ КРЕСТИК */}
             <motion.button
               onClick={closeArtistModal}
-              whileHover={{ scale: 1.2, rotate: 90, color: "#ef4444" }}
+              whileHover={{ scale: 1.15, rotate: 90, color: "#ef4444" }}
               whileTap={{ scale: 0.85 }}
-              transition={{ duration: 0.25, ease: "easeInOut" }}
-              className="absolute top-6 right-6 text-zinc-500 transition-colors text-2xl font-mono select-none"
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              className="absolute top-6 right-6 text-zinc-500 transition-colors text-4xl font-mono select-none cursor-pointer leading-none z-20"
             >
               ×
             </motion.button>
 
             {/* Жирный брутальный заголовок с ником */}
-            <h2 className="text-xl font-black tracking-tighter text-white mb-6 text-center select-none">
+            <h2 className="text-xl font-black tracking-tighter text-white mb-6 text-center select-none pr-6">
               {activeArtistName}
             </h2>
 
-            {/* Контентная зона с увеличенными шрифтами */}
+            {/* Контентная зона */}
             <div className="flex flex-col gap-4 min-h-[140px] justify-center w-full">
               {loading ? (
                 <div className="text-center text-[11px] font-black tracking-[0.2em] text-zinc-500 animate-pulse uppercase">
@@ -119,8 +113,7 @@ export default function ArtistModal() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3 w-full">
-
-                  {/* TELEGRAM — ГОЛУБОЙ НЕОН ИЛИ ПЕРЕЧЕРКНУТЫЙ БРУТАЛИЗМ */}
+                  {/* TELEGRAM */}
                   <motion.a
                     href={links?.tg || undefined}
                     target="_blank"
@@ -138,21 +131,18 @@ export default function ArtistModal() {
                     } : {}}
                     whileTap={links?.tg ? { scale: 0.95 } : {}}
                     transition={{ type: "spring", stiffness: 400, damping: 15, duration: 0.2 }}
-                    className={`h-12 flex items-center justify-between px-5 border rounded-xl text-xs font-black tracking-widest uppercase relative overflow-hidden ${links?.tg ? 'cursor-pointer' : 'cursor-not-allowed pointer-events-none'
-                      }`}
+                    className={`h-12 flex items-center justify-between px-5 border rounded-xl text-xs font-black tracking-widest uppercase relative overflow-hidden ${links?.tg ? 'cursor-pointer' : 'cursor-not-allowed pointer-events-none'}`}
                   >
                     <span className={!links?.tg ? 'line-through decoration-zinc-700 decoration-2' : ''}>TELEGRAM</span>
                     <span className="text-xs opacity-50">{links?.tg ? '→' : '×'}</span>
-
-                    {/* Моя брутальная жирная линия перечеркивания по диагонали всей кнопки */}
                     {!links?.tg && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-[110%] h-[2px] bg-zinc-800/60 rotate-[4deg]" />
+                        <div className="w-[110%] h-[2px] bg-zinc-800/60 rotate-[-4deg]" />
                       </div>
                     )}
                   </motion.a>
 
-                  {/* SPOTIFY — ЗЕЛЕНЫЙ НЕОН ИЛИ ПЕРЕЧЕРКНУТЫЙ БРУТАЛИЗМ */}
+                  {/* SPOTIFY */}
                   <motion.a
                     href={links?.spotify || undefined}
                     target="_blank"
@@ -170,20 +160,18 @@ export default function ArtistModal() {
                     } : {}}
                     whileTap={links?.spotify ? { scale: 0.95 } : {}}
                     transition={{ type: "spring", stiffness: 400, damping: 15, duration: 0.2 }}
-                    className={`h-12 flex items-center justify-between px-5 border rounded-xl text-xs font-black tracking-widest uppercase relative overflow-hidden ${links?.spotify ? 'cursor-pointer' : 'cursor-not-allowed pointer-events-none'
-                      }`}
+                    className={`h-12 flex items-center justify-between px-5 border rounded-xl text-xs font-black tracking-widest uppercase relative overflow-hidden ${links?.spotify ? 'cursor-pointer' : 'cursor-not-allowed pointer-events-none'}`}
                   >
                     <span className={!links?.spotify ? 'line-through decoration-zinc-700 decoration-2' : ''}>SPOTIFY</span>
                     <span className="text-xs opacity-50">{links?.spotify ? '→' : '×'}</span>
-
                     {!links?.spotify && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-[110%] h-[2px] bg-zinc-800/60 rotate-[4deg]" />
+                        <div className="w-[110%] h-[2px] bg-zinc-800/60 rotate-[-4deg]" />
                       </div>
                     )}
                   </motion.a>
 
-                  {/* VK — СИНИЙ НЕОН ИЛИ ПЕРЕЧЕРКНУТЫЙ БРУТАЛИЗМ */}
+                  {/* VKONTAKTE */}
                   <motion.a
                     href={links?.vk || undefined}
                     target="_blank"
@@ -201,19 +189,16 @@ export default function ArtistModal() {
                     } : {}}
                     whileTap={links?.vk ? { scale: 0.95 } : {}}
                     transition={{ type: "spring", stiffness: 400, damping: 15, duration: 0.2 }}
-                    className={`h-12 flex items-center justify-between px-5 border rounded-xl text-xs font-black tracking-widest uppercase relative overflow-hidden ${links?.vk ? 'cursor-pointer' : 'cursor-not-allowed pointer-events-none'
-                      }`}
+                    className={`h-12 flex items-center justify-between px-5 border rounded-xl text-xs font-black tracking-widest uppercase relative overflow-hidden ${links?.vk ? 'cursor-pointer' : 'cursor-not-allowed pointer-events-none'}`}
                   >
                     <span className={!links?.vk ? 'line-through decoration-zinc-700 decoration-2' : ''}>VKONTAKTE</span>
                     <span className="text-xs opacity-50">{links?.vk ? '→' : '×'}</span>
-
                     {!links?.vk && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-[110%] h-[2px] bg-zinc-800/60 rotate-[4deg]" />
+                        <div className="w-[110%] h-[2px] bg-zinc-800/60 rotate-[-4deg]" />
                       </div>
                     )}
                   </motion.a>
-
                 </div>
               )}
             </div>
